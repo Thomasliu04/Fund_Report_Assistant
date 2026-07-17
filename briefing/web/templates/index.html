@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>简报出报台 · Briefing Desk</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+  <div class="bg-grid" aria-hidden="true"></div>
+  <header class="top">
+    <div class="brand">
+      <span class="brand-mark">银</span>
+      <div>
+        <p class="brand-name">简报出报台</p>
+        <p class="brand-sub">Briefing Desk · 底稿 → 全册 PPT</p>
+      </div>
+    </div>
+    <p class="top-hint">三步：上传底稿 · 确认期别 · 生成 PPT（文字）+ Excel（表图）</p>
+  </header>
+
+  <main class="flow">
+    <!-- Step 1 -->
+    <section class="step" id="step-upload" data-step="1">
+      <div class="step-head">
+        <span class="step-num">01</span>
+        <h2>上传底稿</h2>
+      </div>
+      <label class="drop" id="dropzone" for="file-input">
+        <input type="file" id="file-input" accept=".xlsx,.xlsm" hidden />
+        <div class="drop-inner">
+          <p class="drop-title">拖入或点击选择 <em>简报底稿.xlsx</em></p>
+          <p class="drop-sub">需含「行业变化 / 总规模 / 非货 / 各业务排名」等 sheet</p>
+        </div>
+      </label>
+      <div class="meta" id="upload-meta" hidden></div>
+    </section>
+
+    <!-- Step 2 -->
+    <section class="step is-disabled" id="step-config" data-step="2">
+      <div class="step-head">
+        <span class="step-num">02</span>
+        <h2>确认期别与日期</h2>
+      </div>
+      <form id="config-form" class="config-grid">
+        <label>
+          <span>期别标签</span>
+          <input name="period_label" id="period_label" placeholder="如 25H1 / 25Q3" required />
+        </label>
+        <label>
+          <span>报告类型</span>
+          <select name="period_type" id="period_type">
+            <option value="half_year">半年度</option>
+            <option value="quarter">季度</option>
+            <option value="year">年度</option>
+          </select>
+        </label>
+        <label>
+          <span>报告期末</span>
+          <input name="current" id="current" pattern="\d{8}" placeholder="YYYYMMDD" required />
+        </label>
+        <label>
+          <span>上季末</span>
+          <input name="previous_quarter" id="previous_quarter" pattern="\d{8}" required />
+        </label>
+        <label>
+          <span>年初</span>
+          <input name="year_start" id="year_start" pattern="\d{8}" required />
+        </label>
+        <label>
+          <span>关注公司</span>
+          <input name="focus_company" id="focus_company" value="银华基金" required />
+        </label>
+        <label>
+          <span>简称</span>
+          <input name="focus_company_short" id="focus_company_short" value="银华" required />
+        </label>
+      </form>
+      <p class="hint" id="date-hint">日期通常由底稿「行业变化」表头自动识别，请核对后生成。</p>
+    </section>
+
+    <!-- Step 3 -->
+    <section class="step is-disabled" id="step-generate" data-step="3">
+      <div class="step-head">
+        <span class="step-num">03</span>
+        <h2>生成全册 PPT</h2>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn primary" id="btn-generate" disabled>
+          生成 PPT + Excel 表图
+        </button>
+        <a class="btn ghost" id="btn-download" hidden href="#">下载 PPT</a>
+        <a class="btn ghost" id="btn-download-xlsx" hidden href="#">下载 Excel 表图</a>
+      </div>
+      <div class="status" id="status" hidden></div>
+      <div class="preview" id="preview" hidden>
+        <h3>关键核对</h3>
+        <p class="preview-industry" id="preview-industry"></p>
+        <ul id="preview-list"></ul>
+        <p class="preview-note">PPT 侧重文字（观点句人工敲定）；Excel 含各页表图，便于改条件格式/美观后再贴回 PPT。</p>
+      </div>
+    </section>
+
+    <section class="recent">
+      <div class="step-head">
+        <span class="step-num">·</span>
+        <h2>最近生成</h2>
+      </div>
+      <ul id="recent-list" class="recent-list">
+        <li class="muted">暂无文件</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span>本地操作 · 数据不离开本机</span>
+    <span>命令行：<code>python main.py serve</code></span>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

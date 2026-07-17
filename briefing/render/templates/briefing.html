@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ report.config.title }}</title>
+  <style>
+    :root {
+      --primary: #1a365d;
+      --accent: #c53030;
+      --border: #cbd5e0;
+      --bg-alt: #f7fafc;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+      font-size: 14px;
+      line-height: 1.7;
+      color: #2d3748;
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 40px 32px;
+    }
+    h1 {
+      font-size: 22px;
+      color: var(--primary);
+      text-align: center;
+      margin-bottom: 8px;
+    }
+    .meta {
+      text-align: center;
+      font-size: 12px;
+      color: #718096;
+      margin-bottom: 32px;
+    }
+    h2 {
+      font-size: 16px;
+      color: var(--primary);
+      border-left: 4px solid var(--accent);
+      padding-left: 10px;
+      margin: 28px 0 14px;
+    }
+    h3 {
+      font-size: 14px;
+      color: #4a5568;
+      margin: 20px 0 10px;
+    }
+    p { margin-bottom: 10px; text-indent: 2em; }
+    ul { margin: 8px 0 14px 2em; }
+    li { margin-bottom: 6px; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      margin: 14px 0 20px;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 5px 8px;
+      text-align: right;
+    }
+    th { background: var(--bg-alt); font-weight: 600; text-align: center; }
+    td:first-child, th:first-child { text-align: center; }
+    td:nth-child(2) { text-align: left; }
+    .footnote {
+      font-size: 11px;
+      color: #718096;
+      margin-top: -10px;
+      margin-bottom: 16px;
+    }
+    .highlight { color: var(--accent); font-weight: 600; }
+    @media print {
+      body { padding: 20px; }
+      h2 { page-break-after: avoid; }
+      table { page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <h1>{{ report.config.title }}</h1>
+  <p class="meta">{{ report.config.data_source_note }}</p>
+
+  {% set section_n = namespace(value=0) %}
+  {% for section in report.sections %}
+    {% set section_n.value = section_n.value + 1 %}
+    <h2>{{ ['一','二','三','四','五','六','七','八','九','十'][section_n.value - 1] }}、{{ section.title }}</h2>
+
+    {% for para in section.narrative.paragraphs %}
+      <p>{{ para }}</p>
+    {% endfor %}
+    {% if section.narrative.bullets %}
+      <ul>
+        {% for bullet in section.narrative.bullets %}
+          <li>{{ bullet }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    {% if section.table_rows %}
+      <table>
+        <thead>
+          <tr>
+            {% for h in section.table_headers %}
+              <th>{{ h }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in section.table_rows %}
+            <tr>
+              {% for cell in row %}
+                <td{% if section.focus_company and loop.index == 2 and cell == section.focus_company %} class="highlight"{% endif %}>{{ cell }}</td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+
+    {% for fn in section.footnotes %}
+      <p class="footnote">{{ fn }}</p>
+    {% endfor %}
+
+    {% for sub in section.subsections %}
+      <h3>{{ sub.title }}</h3>
+      {% for para in sub.narrative.paragraphs %}
+        <p>{{ para }}</p>
+      {% endfor %}
+      {% if sub.table_rows %}
+        <table>
+          <thead><tr>{% for h in sub.table_headers %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+          <tbody>
+            {% for row in sub.table_rows %}
+              <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+    {% endfor %}
+  {% endfor %}
+</body>
+</html>

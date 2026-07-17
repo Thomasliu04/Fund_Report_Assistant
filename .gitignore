@@ -1,0 +1,26 @@
+# 生成产物（可随时用 full-deck / export-tables 重新生成）
+output/*
+!output/.gitkeep
+
+# 网页端临时任务/上传
+data/_web_uploads/
+data/_web_jobs/
+
+# 本地临时解包
+tmp_pptx_imgs/
+tmp_pptx_media/
+
+# IDE
+.idea/
+
+# macOS / Excel 临时文件
+.DS_Store
+**/~$*.xlsx
+**/~$*.pptx
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/

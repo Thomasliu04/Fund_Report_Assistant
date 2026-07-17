@@ -1,0 +1,143 @@
+# 全册 slide map — templates/25H1_template.pptx（10 页）
+# 表均为贴图；按第 2 页同款：文字整段替换 + PNG 表图（数据条/色阶）等比适配
+
+template: templates/25H1_template.pptx
+slide_size: [13.33, 7.50]
+
+slides:
+  - index: 0
+    id: overview
+    narrative_shape: "矩形 1"
+    paragraphs:
+      0: title
+      1: data_source_note
+      2: section_title
+      3: opening
+      4: all_positive_intro
+      5: bullet_1
+      6: bullet_2
+      7: bullet_3
+      8: bullet_4
+      10: highlight_1
+      11: highlight_2
+    footnote_shape: "矩形 4"
+    footnote_key: footnote
+    picture_shape: "图片 2"
+    table_image: category_summary
+
+  - index: 1
+    id: total_ranking
+    narrative_shape: "矩形 2"
+    paragraphs:
+      0: section_title
+      1: peer_moves
+      2: focus_rank
+      3: focus_growth
+    footnote_shape: "文本框 5"
+    footnote_key: footnote_passive
+    picture_shape: "图片 6"
+    table_image: total_ranking_top30
+
+  - index: 2
+    id: non_money_ranking
+    narrative_shape: "矩形 2"
+    paragraphs:
+      0: section_title
+      1: p1
+      2: p2
+      3: p3
+    footnote_shape: "文本框 4"
+    footnote_key: footnote_passive
+    picture_shape: "图片 5"
+    table_image: non_money_ranking
+
+  - index: 3
+    id: increment_overview
+    narrative_shape: "矩形 2"
+    paragraphs:
+      0: section_title
+      1: p1
+      2: p2
+      3: p3
+    footnote_shape: "文本框 4"
+    footnote_key: footnote_passive
+    picture_shape: "图片 3"
+    table_image: increment_overview
+
+  - index: 4
+    id: active_equity
+    narrative_shape: "矩形 2"
+    paragraphs:
+      0: section_title
+      1: p1
+      2: p2
+      3: p3
+      4: p4
+    extra_text:
+      - shape: "矩形 3"
+        key: subtitle
+    picture_shape: "图片 4"
+    table_image: active_equity
+
+  - index: 5
+    id: etf_dual
+    narrative_shape: "矩形 2"
+    paragraphs:
+      0: p0
+      1: p1
+    extra_text:
+      - shape: "矩形 3"
+        key: sub_with
+      - shape: "矩形 4"
+        key: sub_without
+    pictures:
+      - shape: "图片 5"
+        table_image: etf_with_link
+      - shape: "图片 6"
+        table_image: etf_no_link
+
+  - index: 6
+    id: money
+    narrative_shape: "矩形 5"
+    paragraphs:
+      0: p0
+    extra_text:
+      - shape: "矩形 3"
+        key: title
+    picture_shape: "图片 2"
+    table_image: money
+
+  - index: 7
+    id: fixed_income
+    narrative_shape: "矩形 5"
+    paragraphs:
+      0: p0
+      1: p1
+    extra_text:
+      - shape: "矩形 3"
+        key: title
+    picture_shape: "图片 2"
+    table_image: fixed_income
+
+  - index: 8
+    id: fixed_income_plus
+    narrative_shape: "矩形 5"
+    paragraphs:
+      0: p0
+      1: p1
+    extra_text:
+      - shape: "矩形 3"
+        key: title
+    picture_shape: "图片 2"
+    table_image: fixed_income_plus
+
+  - index: 9
+    id: fof
+    narrative_shape: "矩形 5"
+    paragraphs:
+      0: p0
+    extra_text:
+      - shape: "矩形 3"
+        key: title
+    picture_shape: "图片 2"
+    table_image: fof

@@ -1,0 +1,86 @@
+# 报告配置模板 — 复制后修改 period / dates / focus_company
+
+report:
+  title: "{period_label}公募行业数据简报"
+  period_label: "2025H1"          # 如 25Q2、2025H1
+  period_type: "half_year"        # quarter | half_year | year
+  data_source_note: "如无特别注明，以下数据口径均未剔除联接，数据来源wind"
+
+dates:
+  current: "20250630"             # 报告期末
+  previous_quarter: "20250331"    # 上季度末
+  year_start: "20241231"          # 年初/上年末
+
+# 表头前缀（可选）；不写则按 period_type/日期自动推导
+# column_labels:
+#   ytd: "25年"      # 或 25H1
+#   quarter: "Q4"
+
+focus_company: "银华基金"
+focus_company_short: "银华"
+
+categories:
+  - key: total
+    label: 合计
+  - key: non_money
+    label: 非货
+  - key: money
+    label: 货币
+  - key: fixed_income
+    label: 固收
+  - key: passive_equity
+    label: 被动权益
+  - key: active_equity
+    label: 主动权益
+  - key: fixed_income_plus
+    label: 固收+
+  - key: fof
+    label: FOF
+
+ranking:
+  top_n: 30
+
+sections:
+  - id: overview
+    title: "{period_label}公募规模整体情况"
+    type: category_summary
+  - id: total_ranking
+    title: "{period_label}公募基金总规模（含货币）排名"
+    type: company_ranking
+    category: total
+  - id: non_money_ranking
+    title: "{period_label}公募基金非货规模排名"
+    type: company_ranking
+    category: non_money
+    focus_commentary: true
+  - id: increment_overview
+    title: "{period_label}非货增量情况概览"
+    type: increment_breakdown
+    category: non_money
+    focus_commentary: true
+  - id: business_rankings
+    title: "{period_label}各项业务排名情况"
+    type: multi_category
+    subsections:
+      - category: active_equity
+        title: 主动权益排名
+      - category: passive_equity_etf_with_link
+        title: 权益ETF（含联接）排名
+      - category: passive_equity_etf_no_link
+        title: 权益ETF（不含联接）排名
+      - category: money
+        title: 货币排名情况
+      - category: fixed_income
+        title: 固收排名情况
+      - category: fixed_income_plus
+        title: 固收+排名情况
+      - category: fof
+        title: FOF排名情况
+
+narrative:
+  # 排名变化显著阈值
+  rank_change_threshold: 3
+  # 增速排名靠前取前几
+  growth_highlight_top: 3
+  # 增量单位：亿
+  aum_unit: 亿

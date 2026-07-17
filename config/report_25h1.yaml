@@ -1,0 +1,40 @@
+# 报告配置 — 2025H1 示例（对齐 PDF 简报）
+
+report:
+  title: "{period_label}公募行业数据简报"
+  period_label: "25H1"
+  period_type: "half_year"
+  data_source_note: "如无特别注明，以下数据口径均未剔除联接，数据来源wind"
+
+dates:
+  current: "20250630"
+  previous_quarter: "20250331"
+  year_start: "20241231"
+
+column_labels:
+  ytd: "25H1"
+  quarter: "Q2"
+
+focus_company: "银华基金"
+focus_company_short: "银华"
+
+categories:
+  - key: total
+    label: 合计
+  - key: non_money
+    label: 非货
+  - key: money
+    label: 货币
+  - key: fixed_income
+    label: 固收
+  - key: passive_equity
+    label: 被动权益
+  - key: active_equity
+    label: 主动权益
+  - key: fixed_income_plus
+    label: 固收+
+  - key: fof
+    label: FOF
+
+ranking:
+  top_n: 30
