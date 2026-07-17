@@ -7,9 +7,9 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 
-# 简报表常见配色（深蓝表头 + 浅底 + 银华行高亮）
-HEADER_BG = (211, 40, 32)
-HEADER_FG = (255, 255, 255)
+# 表头浅粉底 + 深色字
+HEADER_BG = (242, 220, 219)
+HEADER_FG = (51, 51, 51)
 ROW_BG_ALT = (232, 240, 248)
 ROW_BG = (255, 255, 255)
 GRID = (180, 198, 216)

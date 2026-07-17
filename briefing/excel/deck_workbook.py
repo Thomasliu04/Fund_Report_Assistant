@@ -28,9 +28,10 @@ def _cell_value(val: Any, fmt: str):
     if fmt == "pct":
         try:
             v = float(val)
-            if abs(v) <= 2:
-                v = v * 100
-            return int(round(v))
+            # 底稿多为 0.15；若已是 15 这类百分数则先还原为小数
+            if abs(v) > 2:
+                v = v / 100.0
+            return round(v, 6)
         except (TypeError, ValueError):
             return val
     return val
@@ -47,8 +48,8 @@ def _add_sheet(
 ) -> list[str]:
     """写入 sheet，返回需要双向轴补丁的区域列表（如 E2:E31）。"""
     ws = wb.create_sheet(title[:31])
-    header_fill = PatternFill("solid", fgColor="D32820")
-    header_font = Font(bold=True, color="FFFFFF", name="微软雅黑", size=10)
+    header_fill = PatternFill("solid", fgColor="F2DCDB")
+    header_font = Font(bold=True, color="333333", name="微软雅黑", size=10)
     thin = Border(
         left=Side(style="thin", color="B4C6DC"),
         right=Side(style="thin", color="B4C6DC"),
@@ -76,6 +77,8 @@ def _add_sheet(
             cell.border = thin
             align = {"left": "left", "right": "right"}.get(col.align, "center")
             cell.alignment = Alignment(horizontal=align, vertical="center")
+            if col.fmt == "pct" and isinstance(val, (int, float)):
+                cell.number_format = '0%'
             if is_focus:
                 cell.fill = focus_fill
 

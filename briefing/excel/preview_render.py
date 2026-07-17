@@ -62,7 +62,7 @@ def render_ranking_with_databars(
     img = Image.new("RGB", (width, height), (255, 255, 255))
     draw = ImageDraw.Draw(img)
 
-    header_bg = (211, 40, 32)
+    header_bg = (242, 220, 219)
     grid = (180, 198, 216)
 
     # header
@@ -70,7 +70,7 @@ def render_ranking_with_databars(
     for c, h in enumerate(HEADERS):
         w = col_w[c]
         draw.rectangle([x, pad, x + w, pad + header_h], fill=header_bg, outline=grid)
-        draw.text((x + 4 * scale, pad + 6 * scale), h, fill=(255, 255, 255), font=font_h)
+        draw.text((x + 4 * scale, pad + 6 * scale), h, fill=(51, 51, 51), font=font_h)
         x += w
 
     incs = [r["increment"] for r in rows]

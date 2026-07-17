@@ -64,7 +64,7 @@ def _format_cell(val: Any, fmt: str) -> str:
             # 已是百分比数值（如 9）或小数（0.09）
             if abs(v) <= 2:
                 v = v * 100
-            return str(int(round(v)))
+            return f"{int(round(v))}%"
         except (TypeError, ValueError):
             return str(val)
     return str(val)
@@ -92,7 +92,7 @@ def render_styled_table(
     height = header_h + row_h * max(n, 1) + pad * 2
     img = Image.new("RGB", (width, height), (255, 255, 255))
     draw = ImageDraw.Draw(img)
-    header_bg = (211, 40, 32)
+    header_bg = (242, 220, 219)
     grid = (180, 198, 216)
 
     # header
@@ -100,7 +100,7 @@ def render_styled_table(
     for c, col in enumerate(columns):
         w = col_w[c]
         draw.rectangle([x, pad, x + w, pad + header_h], fill=header_bg, outline=grid)
-        draw.text((x + 3 * scale, pad + 5 * scale), col.header, fill=(255, 255, 255), font=font_h)
+        draw.text((x + 3 * scale, pad + 5 * scale), col.header, fill=(51, 51, 51), font=font_h)
         x += w
 
     # precompute scales / bar dens

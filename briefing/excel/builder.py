@@ -34,8 +34,8 @@ def build_total_ranking_workbook(rows: list[dict], output_path: str | Path, focu
     ws = wb.active
     ws.title = "总规模排名"
 
-    header_fill = PatternFill("solid", fgColor="D32820")
-    header_font = Font(bold=True, color="FFFFFF", name="微软雅黑", size=10)
+    header_fill = PatternFill("solid", fgColor="F2DCDB")
+    header_font = Font(bold=True, color="333333", name="微软雅黑", size=10)
     thin = Border(
         left=Side(style="thin", color="B4C6DC"),
         right=Side(style="thin", color="B4C6DC"),
