@@ -29,13 +29,24 @@ def main(argv: list[str] | None = None) -> int:
     loop.add_argument("--template", default="templates/25H1_template.pptx")
     loop.add_argument("--output", default="output/25H1_excel_loop.pptx")
 
-    full = sub.add_parser("full-deck", help="全册10页：文字+表图灌入 PPT")
-    full.add_argument("--config", default="config/report_25h1.yaml")
+    full = sub.add_parser("full-deck", help="全册 PPT：默认只灌文字（表图人工粘贴）")
+    full.add_argument("--config", default="config/report_26h1.yaml")
     full.add_argument("--data", default="data/sample_25h1")
-    full.add_argument("--template", default="templates/25H1_template.pptx")
-    full.add_argument("--slide-map", default="config/slide_map.yaml")
-    full.add_argument("--output", default="output/25H1_full_deck.pptx")
-    full.add_argument("--draft-xlsx", default="", help="底稿终表 xlsx；提供则以终表生成表图")
+    full.add_argument("--template", default="templates/25Q4_template.pptx")
+    full.add_argument("--slide-map", default="config/slide_map_q4.yaml")
+    full.add_argument("--output", default="output/26H1_briefing.pptx")
+    full.add_argument("--draft-xlsx", default="", help="底稿终表 xlsx；文字与 tables 均从此读")
+    full.add_argument("--tables-xlsx", default="", help="已导出的 xx_tables.xlsx；优先用于读表成文")
+    full.add_argument(
+        "--paste-tables",
+        action="store_true",
+        help="同时自动贴表图（默认关闭，留给人工粘贴）",
+    )
+    full.add_argument(
+        "--strict",
+        action="store_true",
+        help="终表读数存在 error 时中止",
+    )
 
     imp = sub.add_parser("import-xlsx", help="从简报底稿 xlsx 导入 fund_metrics.csv")
     imp.add_argument("--xlsx", required=True, help="底稿 xlsx 路径")
@@ -46,6 +57,24 @@ def main(argv: list[str] | None = None) -> int:
     tables.add_argument("--output", required=True, help="输出 xx_tables.xlsx")
     tables.add_argument("--period", default="", help="期别标签，如 25Q4")
     tables.add_argument("--focus", default="银华", help="高亮公司简称")
+    tables.add_argument(
+        "--strict",
+        action="store_true",
+        help="底稿校验存在 error 时中止导出",
+    )
+    tables.add_argument(
+        "--skip-validate",
+        action="store_true",
+        help="跳过导出前底稿健全性检查",
+    )
+
+    val = sub.add_parser("validate-draft", help="检查底稿终表结构与增速刻度（不改文件）")
+    val.add_argument("--xlsx", required=True, help="底稿 xlsx 路径")
+    val.add_argument(
+        "--strict",
+        action="store_true",
+        help="存在 error 时以非 0 退出码返回",
+    )
 
     serve = sub.add_parser("serve", help="启动网页操作台")
     serve.add_argument("--host", default="127.0.0.1")
@@ -99,11 +128,17 @@ def main(argv: list[str] | None = None) -> int:
             slide_map_path=args.slide_map,
             output_pptx=args.output,
             draft_xlsx=args.draft_xlsx or None,
+            tables_xlsx=getattr(args, "tables_xlsx", "") or None,
+            paste_tables=bool(getattr(args, "paste_tables", False)),
+            strict=bool(getattr(args, "strict", False)),
         )
         print("全册 PPT 生成完成:")
         for k, v in info.items():
             if k == "images":
                 print(f"  images: {len(v)} 张")
+            elif k == "narrative_report":
+                print(f"  --- 读表成文 ---")
+                print(v)
             else:
                 print(f"  {k}: {v}")
         return 0
@@ -126,8 +161,26 @@ def main(argv: list[str] | None = None) -> int:
         print("请确认 config 中 dates 与上述一致后执行 full-deck。")
         return 0
 
+    if args.command == "validate-draft":
+        from briefing.importers.validate_draft import validate_draft_xlsx
+
+        report = validate_draft_xlsx(args.xlsx)
+        print(report.format_text())
+        if args.strict and not report.ok:
+            return 2
+        return 0
+
     if args.command == "export-tables":
         from briefing.deck.final_tables import export_tables_from_final_xlsx
+        from briefing.importers.validate_draft import validate_draft_xlsx
+
+        if not args.skip_validate:
+            report = validate_draft_xlsx(args.xlsx)
+            print(report.format_text())
+            print()
+            if args.strict and not report.ok:
+                print("已启用 --strict：存在 error，中止导出。请按上方提示改底稿后重试。")
+                return 2
 
         out = export_tables_from_final_xlsx(
             args.xlsx,

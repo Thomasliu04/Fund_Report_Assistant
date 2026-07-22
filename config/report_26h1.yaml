@@ -1,19 +1,19 @@
-# 报告配置 — 2025Q4（对齐 25Q4 简报底稿）
+# 报告配置 — 2026H1（Part 1底稿：20260630 / 20260331 / 20251231）
 
 report:
   title: "{period_label} 公募行业数据简报"
-  period_label: "2025Q4"
-  period_type: "quarter"
+  period_label: "26H1"
+  period_type: "half_year"
   data_source_note: "如无特别注明，以下数据口径均未剔除联接，数据来源：Wind"
 
 dates:
-  current: "20251231"
-  previous_quarter: "20250930"
-  year_start: "20241231"
+  current: "20260630"
+  previous_quarter: "20260331"
+  year_start: "20251231"
 
 column_labels:
-  ytd: "25年"
-  quarter: "Q4"
+  ytd: "26H1"
+  quarter: "Q2"
 
 focus_company: "银华基金"
 focus_company_short: "银华"

@@ -1,4 +1,4 @@
-"""叙事文本生成：规则 + 模板，对齐 PDF 简报风格"""
+"""叙事文本生成：规则 + 模板，对齐案例简报句式。"""
 
 from __future__ import annotations
 
@@ -36,6 +36,46 @@ def _date_label(date_str: str) -> str:
     return f"{y[2:]}年{m}月{d}日"
 
 
+def _fmt_inc_amount(v: float) -> str:
+    """增量口语：过万亿用万亿（1位小数）。"""
+    av = abs(v)
+    if av >= 10000:
+        return f"{av / 10000:.1f}万亿".replace(".0万亿", "万亿")
+    return f"{round(v)}亿"
+
+
+def _overview_driver(m: CategoryMetrics) -> str:
+    """品类增量驱动句，对齐案例简报（不含主观行情注释）。"""
+    inc = m.increment
+    if abs(inc) < 1:
+        return ""
+    new_i, nav, hold = m.new_issue, m.nav_change, m.holding_sales
+    share = lambda x: round(abs(x) / abs(inc) * 100) if abs(inc) >= 1 else 0
+
+    # 净值为主且持营大幅净赎回
+    if nav > 0 and hold < -1000 and abs(nav) >= abs(new_i):
+        return (
+            f"其中净值增长{_fmt_inc_amount(nav)}，"
+            f"但客户净赎回近{round(abs(hold))}亿元"
+        )
+    # 新发占增量大头
+    if new_i > 0 and new_i >= max(nav, hold, 0) and share(new_i) >= 40:
+        return f"新发增量{round(new_i)}亿，占增量{share(new_i)}%"
+    # 净值为主
+    if nav > 0 and abs(nav) >= abs(hold) and abs(nav) >= abs(new_i) and share(nav) >= 40:
+        return f"其中净值增长{_fmt_inc_amount(nav)}，占增量的{share(nav)}%"
+    # 持营为主
+    if hold > 0 and hold >= max(new_i, nav, 0):
+        return f"持营增长{'近' if hold >= 5000 else ''}{round(hold)}亿"
+    if new_i > 0:
+        return f"新发增量{round(new_i)}亿，占增量{share(new_i)}%"
+    if abs(nav) > 1:
+        return f"其中净值增长{_fmt_inc_amount(nav)}"
+    if abs(hold) > 1:
+        return f"持营增长{round(hold)}亿"
+    return ""
+
+
 def generate_overview_narrative(
     metrics: list[CategoryMetrics], config: ReportConfig
 ) -> NarrativeBlock:
@@ -53,25 +93,29 @@ def generate_overview_narrative(
             f"非货{_fmt_aum(non_money.aum_current)}（增速{_fmt_pct(non_money.growth_pct)}）。"
         )
 
-    # 按增速排序品类（排除合计、非货）
     cats = [m for m in metrics if m.category not in ("total", "non_money")]
-    cats_sorted = sorted(cats, key=lambda x: x.growth_pct, reverse=True)
+    # 增速较快的品类：正增长按增速排序，最多 5 条；货币可进入榜单
+    positive = sorted(
+        [m for m in cats if m.growth_pct > 0 and m.category != "fixed_income"],
+        key=lambda x: x.growth_pct,
+        reverse=True,
+    )[:5]
+    for i, m in enumerate(positive, 1):
+        base = f"{i}、{m.label}增速{_fmt_pct(m.growth_pct)}，增量{_fmt_inc_amount(m.increment)}"
+        # 货币案例通常只写增速+增量；驱动拆解留给其它品类
+        if m.category == "money":
+            bullets.append(f"{base}。")
+            continue
+        driver = _overview_driver(m)
+        bullets.append(f"{base}，{driver}。" if driver else f"{base}。")
 
-    positive = [m for m in cats if m.increment > 0]
-    if len(positive) == len(cats):
-        period_word = "上半年" if config.period_type.value == "half_year" else "本季度"
-        bullets.append(f"{period_word}，所有品类规模增速均为正：")
-
-    for i, m in enumerate(cats_sorted[:4], 1):
-        detail_parts = [f"规模增长{_fmt_aum(m.increment)}，增速{_fmt_pct(m.growth_pct)}"]
-        if abs(m.new_issue) > abs(m.holding_sales) and m.new_issue > 0:
-            detail_parts.append(f"其中新发贡献{_fmt_aum(m.new_issue)}，是增量大头")
-        elif m.holding_sales > 0 and m.holding_sales > m.new_issue:
-            detail_parts.append(
-                f"增量{_fmt_aum(m.increment)}中，其中有{_fmt_aum(m.holding_sales)}来自于持营贡献"
-            )
-        prefix = f"增速最快的品类是{m.label}" if i == 1 else m.label
-        bullets.append(f"{i}、{prefix}，{'；'.join(detail_parts)}。")
+    # 固收若负增长，单独作为 highlight（案例放在 bullet 后）
+    fi = next((m for m in metrics if m.category == "fixed_income"), None)
+    if fi and fi.increment < 0:
+        paragraphs.append(
+            f"{config.ytd_tag()}全年，固收规模减少{round(abs(fi.increment))}亿，"
+            f"增速{_fmt_pct(fi.growth_pct)}。"
+        )
 
     return NarrativeBlock(section_id="overview", paragraphs=paragraphs, bullets=bullets)
 
@@ -81,30 +125,69 @@ def generate_total_ranking_narrative(
 ) -> NarrativeBlock:
     """第二章：总规模排名"""
     paragraphs: list[str] = []
-    up, down = find_notable_rank_changes(rankings, threshold=3)
+    up, down = find_notable_rank_changes(rankings, threshold=2)
 
-    if up or down:
+    if up:
+        # 案例句式：景顺、中欧各上升3名，富国上升2名
+        by_delta: dict[int, list[str]] = {}
+        for r in up[:5]:
+            short = r.company.replace("基金", "")
+            if short.startswith("景顺"):
+                short = "景顺"
+            by_delta.setdefault(r.rank_change, []).append(short)
         parts = []
-        for r in up[:2]:
-            parts.append(f"{r.company.replace('基金', '')}{_fmt_rank_change(r.rank_change)}")
-        for r in down[:2]:
-            parts.append(f"{r.company.replace('基金', '')}{_fmt_rank_change(r.rank_change)}")
+        for delta, names in sorted(by_delta.items(), key=lambda kv: -kv[0]):
+            if len(names) >= 2:
+                parts.append(f"{'、'.join(names)}各上升{delta}名")
+            else:
+                parts.append(f"{names[0]}上升{delta}名")
         if parts:
             paragraphs.append(
-                f"总规模Top{config.top_n}公司，{'、'.join(parts)}，其他公司位次变化不大。"
+                f"总规模Top{config.top_n}公司，{'，'.join(parts)}，其余公司位次变化并不明显。"
             )
 
     focus = next((r for r in rankings if r.company == config.focus_company), None)
+    if not focus:
+        focus = next(
+            (
+                r
+                for r in rankings
+                if config.focus_company_short in r.company.replace("基金", "")
+            ),
+            None,
+        )
     if focus:
+        ye = config.year_end_ref()
+        pq = config.prev_quarter_ref()
         paragraphs.append(
             f"{config.focus_company_short}总规模排名{focus.rank}，"
-            f"较年初和{config.period_label}上期末排名{_fmt_rank_change(focus.rank_change_q) if focus.rank_change_q else '不变'}。"
+            f"较{ye}排名{_fmt_rank_change(focus.rank_change)}，"
+            f"较{pq}季度{_fmt_rank_change(focus.rank_change_q)}。"
         )
+        g_rank = sorted(rankings, key=lambda x: x.growth_pct, reverse=True)
+        qg_rank = sorted(rankings, key=lambda x: x.q_growth_pct, reverse=True)
+        g_pos = next(i for i, r in enumerate(g_rank, 1) if r.company == focus.company)
+        qg_pos = 1
+        last_pct = None
+        for i, r in enumerate(qg_rank):
+            if last_pct is None or abs(r.q_growth_pct - last_pct) > 1e-9:
+                qg_pos = i + 1
+                last_pct = r.q_growth_pct
+            if r.company == focus.company:
+                break
+        q_line = (
+            f"{config.quarter_tag()}单季度增速达{_fmt_pct(focus.q_growth_pct)}，"
+            f"在Top{config.top_n}公司中位列第{qg_pos}名"
+        )
+        if qg_pos == 2 and qg_rank and qg_rank[0].company != focus.company:
+            leader = qg_rank[0]
+            q_line += (
+                f"，仅次于{leader.company.replace('基金', '')}"
+                f"（{_fmt_pct(leader.q_growth_pct)}）"
+            )
         paragraphs.append(
-            f"{config.focus_company_short}总规模较年初增长{_fmt_aum(focus.increment)}，"
-            f"增速为{_fmt_pct(focus.growth_pct)}；"
-            f"Top{config.top_n}公司中，"
-            f"有{sum(1 for r in rankings if r.increment > 0) * 100 // len(rankings)}%的公司增量均为正。"
+            f"{config.focus_company_short}总规模全年增速为{_fmt_pct(focus.growth_pct)}，"
+            f"在Top{config.top_n}公司中位列第{g_pos}；{q_line}。"
         )
 
     return NarrativeBlock(section_id="total_ranking", paragraphs=paragraphs)
@@ -116,26 +199,28 @@ def generate_non_money_ranking_narrative(
     """第三章：非货规模排名"""
     paragraphs: list[str] = []
     focus = next((r for r in rankings if r.company == config.focus_company), None)
+    if not focus:
+        focus = next(
+            (
+                r
+                for r in rankings
+                if config.focus_company_short in r.company.replace("基金", "")
+            ),
+            None,
+        )
 
     if focus:
-        inc_rank = sorted(rankings, key=lambda x: x.increment, reverse=True)
-        inc_rank_pos = next(i + 1 for i, r in enumerate(inc_rank) if r.company == config.focus_company)
-        growth_rank = sorted(rankings, key=lambda x: x.growth_pct, reverse=True)
-        growth_rank_pos = next(
-            i + 1 for i, r in enumerate(growth_rank) if r.company == config.focus_company
-        )
-
+        ye = config.year_end_ref()
+        pq = config.prev_quarter_ref()
+        lift = ""
+        if focus.rank_change >= 2 and focus.rank <= 20:
+            lift = "，非货排名显著提升，重回Top20行列"
+        elif focus.rank_change >= 2:
+            lift = "，非货排名显著提升"
         paragraphs.append(
             f"非货规模方面，{config.focus_company_short}位列第{focus.rank}位，"
-            f"相较年初{_fmt_rank_change(focus.rank_change)}，"
-            f"较上季度{_fmt_rank_change(focus.rank_change_q)}。"
-        )
-        paragraphs.append(
-            f"{config.focus_company_short}非货，{config.period_label}增量{_fmt_aum(focus.increment)}，"
-            f"增速{_fmt_pct(focus.growth_pct)}，"
-            f"增量和增速排名在Top{config.top_n}中分别是第{inc_rank_pos}名和第{growth_rank_pos}名；"
-            f"非货Top{config.top_n}公司作为一个整体，{config.period_label}增速为"
-            f"{_fmt_pct(sum(r.growth_pct for r in rankings) / len(rankings))}。"
+            f"相较{ye}{_fmt_rank_change(focus.rank_change)}，"
+            f"较{pq}{_fmt_rank_change(focus.rank_change_q)}{lift}。"
         )
 
     return NarrativeBlock(section_id="non_money_ranking", paragraphs=paragraphs)
@@ -147,38 +232,61 @@ def generate_increment_narrative(
     """第四章：非货增量概览"""
     paragraphs: list[str] = []
     focus = next((b for b in breakdowns if b.company == config.focus_company), None)
-
-    if focus:
-        pe_rank = focus.category_increment_ranks.get("passive_equity", 0)
-        fi_rank = focus.category_increment_ranks.get("fixed_income", 0)
-        paragraphs.append(
-            f"{config.focus_company_short}{config.period_label}非货增量为{_fmt_aum(focus.increment)}，"
-            f"在全行业第{focus.increment_rank}名；"
-            f"其中被动权益增量和固收增量排名，分别在第{pe_rank}名和第{fi_rank}名。"
+    if not focus:
+        focus = next(
+            (
+                b
+                for b in breakdowns
+                if config.focus_company_short in b.company.replace("基金", "")
+            ),
+            None,
         )
 
-    # 竞品亮点：增量排名前10中非银华的公司
-    highlights = [
-        b for b in breakdowns if b.increment_rank <= 10 and b.company != config.focus_company
-    ][:2]
-    for h in highlights:
-        parts = []
-        for cat, label in [
-            ("fixed_income", "固收"),
-            ("fixed_income_plus", "固收+"),
-            ("active_equity", "主动权益"),
-        ]:
-            r = h.category_increment_ranks.get(cat)
-            if r and r <= 10:
-                parts.append(f"{label}增量位列行业第{r}名")
-        if parts:
-            short = h.company.replace("基金", "")
+    if focus:
+        cat_names = {
+            "active_equity": "主动权益",
+            "passive_equity": "被动权益",
+            "fixed_income_plus": "固收+",
+            "fixed_income": "固收",
+            "fof": "FOF",
+        }
+        # 案例句式优先：固收+、被动权益、FOF；不足再补其它靠前品类
+        preferred = ["fixed_income_plus", "passive_equity", "fof", "fixed_income", "active_equity"]
+        ranked: list[tuple[str, int]] = []
+        for k in preferred:
+            v = focus.category_increment_ranks.get(k)
+            if v and v <= 20:
+                ranked.append((k, v))
+            if len(ranked) >= 3:
+                break
+        # 保持 preferred 顺序（不为按名次重排，以贴合案例列举习惯）
+        ranked = ranked[:3]
+
+        q_ordered = sorted(breakdowns, key=lambda b: b.q_increment, reverse=True)
+        q_rank = next(
+            (i for i, b in enumerate(q_ordered, 1) if b.company == focus.company),
+            None,
+        )
+        q_month = int(config.current_date[4:6])
+        q_num = (q_month - 1) // 3 + 1
+        if q_rank:
             paragraphs.append(
-                f"值得关注的是{short}，非货增量{_fmt_aum(h.increment)}，"
-                f"排名第{h.increment_rank}：{'、'.join(parts)}。"
-                f"本季度非货排名{'提升' if h.rank_change > 0 else '变化'}"
-                f"至第{h.rank}名；"
+                f"{config.focus_company_short}{config.ytd_tag()}非货增量为{_fmt_aum(focus.increment)}，"
+                f"在全行业排名第{focus.increment_rank}名；"
+                f"{q_num}季度，非货增量为{_fmt_aum(focus.q_increment)}，"
+                f"在全行业排名第{q_rank}名。"
             )
+        else:
+            paragraphs.append(
+                f"{config.focus_company_short}{config.ytd_tag()}非货增量为{_fmt_aum(focus.increment)}，"
+                f"在全行业排名第{focus.increment_rank}名。"
+            )
+        if ranked:
+            names = "、".join(cat_names.get(k, k) for k, _ in ranked)
+            ranks = "、".join(f"第{v}名" for _, v in ranked)
+            if len(ranked) == 3:
+                ranks = f"第{ranked[0][1]}名、第{ranked[1][1]}名和第{ranked[2][1]}名"
+            paragraphs.append(f"{names}的全年增量排名靠前，分别为{ranks}。")
 
     return NarrativeBlock(section_id="increment_overview", paragraphs=paragraphs)
 
@@ -188,31 +296,28 @@ def generate_business_ranking_narrative(
     config: ReportConfig,
     category_label: str,
 ) -> NarrativeBlock:
-    """分项业务排名叙事"""
+    """分项业务排名叙事（通用兜底）"""
     paragraphs: list[str] = []
     focus = next((r for r in rankings if r.company == config.focus_company), None)
+    if not focus:
+        focus = next(
+            (
+                r
+                for r in rankings
+                if config.focus_company_short in r.company.replace("基金", "")
+            ),
+            None,
+        )
 
     if focus:
+        ye = config.year_end_ref()
         paragraphs.append(
             f"{config.focus_company_short}{category_label}，位列第{focus.rank}名，"
-            f"排名较年初{_fmt_rank_change(focus.rank_change)}；"
+            f"排名较{ye}{_fmt_rank_change(focus.rank_change)}；"
             f"规模较年初{'增长' if focus.increment >= 0 else '下降'}"
             f"{_fmt_aum(abs(focus.increment))}，"
             f"{'主要由净值增长带动' if focus.nav_change > focus.new_issue else ''}。"
         )
-
-    # 行业异常亮点：增速超过50%或排名变化超过5
-    for r in rankings:
-        if r.company == config.focus_company:
-            continue
-        if r.rank_change >= 5 or r.growth_pct > 0.5:
-            short = r.company.replace("基金", "")
-            paragraphs.append(
-                f"值得注意的是{short}，"
-                f"{'排名上升' + str(r.rank_change) + '名' if r.rank_change >= 5 else ''}"
-                f"规模增量{_fmt_aum(r.increment)}，增速{_fmt_pct(r.growth_pct)}。"
-            )
-            break
 
     return NarrativeBlock(
         section_id=f"business_{category_label}",

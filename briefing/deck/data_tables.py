@@ -52,12 +52,12 @@ def cols_category(config: ReportConfig) -> list[ColumnSpec]:
         ColumnSpec("aum_prev_quarter", "上季末", 72, "center", "int"),
         ColumnSpec("aum_year_start", "年初", 72, "center", "int"),
         ColumnSpec("increment", f"{y}增量", 68, "right", "int", bar="bidirectional"),
-        ColumnSpec("growth_pct", f"{y}增速%", 52, "center", "pct"),
+        ColumnSpec("growth_pct", f"{y}增速%", 52, "center", "pct", color_scale="growth"),
         ColumnSpec("new_issue", f"{y}新发", 56, "center", "int"),
-        ColumnSpec("nav_change", f"{y}净值变化", 64, "right", "int", bar="bidirectional"),
-        ColumnSpec("holding_sales", f"{y}持营", 64, "right", "int", bar="bidirectional"),
+        ColumnSpec("nav_change", f"{y}净值变化", 64, "center", "int"),
+        ColumnSpec("holding_sales", f"{y}持营", 64, "center", "int"),
         ColumnSpec("q_increment", f"{q}增量", 64, "right", "int", bar="bidirectional"),
-        ColumnSpec("q_growth_pct", f"{q}增速%", 52, "center", "pct"),
+        ColumnSpec("q_growth_pct", f"{q}增速%", 52, "center", "pct", color_scale="growth"),
     ]
 
 
@@ -65,16 +65,16 @@ def cols_total(config: ReportConfig) -> list[ColumnSpec]:
     y, q = config.ytd_tag(), config.quarter_tag()
     return [
         ColumnSpec("rank", "排名", 34),
-        ColumnSpec("rank_change", f"{y}排名变化", 48),
-        ColumnSpec("rank_change_q", f"{q}排名变化", 48),
-        ColumnSpec("company", "基金公司", 90, "left", "text"),
+        ColumnSpec("rank_change", f"{y}排名变化", 48, "right", "int", bar="bidirectional"),
+        ColumnSpec("rank_change_q", f"{q}排名变化", 48, "right", "int", bar="bidirectional"),
+        ColumnSpec("company", "公司", 90, "center", "text"),
         ColumnSpec("aum", "总规模", 56, "center", "int"),
         ColumnSpec("increment", f"{y}增量", 62, "right", "int", bar="bidirectional"),
         ColumnSpec("growth_pct", f"{y}增速%", 44, "center", "pct"),
         ColumnSpec("q_increment", f"{q}增量", 58, "right", "int", bar="bidirectional"),
         ColumnSpec("q_growth_pct", f"{q}增速%", 44, "center", "pct"),
         ColumnSpec("money", "货币", 52, "center", "int"),
-        ColumnSpec("non_money", "非货", 52, "right", "int", bar="positive"),
+        ColumnSpec("non_money", "非货", 52, "center", "int"),
         ColumnSpec("money_rank", "货币排名", 48, "center", "int", color_scale="rank"),
         ColumnSpec("non_money_rank", "非货排名", 48, "center", "int", color_scale="rank"),
         ColumnSpec("active_rank", "主动权益排名", 52, "center", "int", color_scale="rank"),
@@ -89,19 +89,27 @@ def cols_non_money(config: ReportConfig) -> list[ColumnSpec]:
     y, q = config.ytd_tag(), config.quarter_tag()
     return [
         ColumnSpec("rank", "排名", 34),
-        ColumnSpec("rank_change", f"{y}排名变化", 48),
-        ColumnSpec("rank_change_q", f"{q}排名变化", 48),
-        ColumnSpec("company", "基金公司", 90, "left", "text"),
+        ColumnSpec("rank_change", f"{y}排名变化", 48, "right", "int", bar="bidirectional"),
+        ColumnSpec("rank_change_q", f"{q}排名变化", 48, "right", "int", bar="bidirectional"),
+        ColumnSpec("company", "公司", 90, "center", "text"),
         ColumnSpec("aum", "非货总计", 56, "center", "int"),
         ColumnSpec("increment", f"{y}增量", 58, "right", "int", bar="bidirectional"),
         ColumnSpec("growth_pct", f"{y}增速%", 44, "center", "pct"),
         ColumnSpec("q_increment", f"{q}增量", 56, "right", "int", bar="bidirectional"),
         ColumnSpec("q_growth_pct", f"{q}增速%", 44, "center", "pct"),
-        ColumnSpec("active_equity", "主动权益", 52, "center", "int"),
-        ColumnSpec("passive_equity", "被动权益", 52, "center", "int"),
-        ColumnSpec("fixed_income_plus", "固收+", 48, "center", "int"),
-        ColumnSpec("fixed_income", "固收", 48, "center", "int"),
-        ColumnSpec("fof", "FOF", 40, "center", "int"),
+        ColumnSpec(
+            "active_equity", "主动权益规模", 52, "right", "int", bar="positive", bar_color="blue"
+        ),
+        ColumnSpec(
+            "passive_equity", "被动权益规模", 52, "right", "int", bar="positive", bar_color="blue"
+        ),
+        ColumnSpec(
+            "fixed_income_plus", "固收+规模", 48, "right", "int", bar="positive", bar_color="blue"
+        ),
+        ColumnSpec(
+            "fixed_income", "固收规模", 48, "right", "int", bar="positive", bar_color="blue"
+        ),
+        ColumnSpec("fof", "FOF规模", 40, "right", "int", bar="positive", bar_color="blue"),
         ColumnSpec("active_rank", "主动权益排名", 52, "center", "int", color_scale="rank"),
         ColumnSpec("passive_rank", "被动权益排名", 52, "center", "int", color_scale="rank"),
         ColumnSpec("fi_rank", "固收排名", 48, "center", "int", color_scale="rank"),
@@ -115,7 +123,7 @@ def cols_increment(config: ReportConfig) -> list[ColumnSpec]:
     return [
         ColumnSpec("rank", "排名", 36),
         ColumnSpec("rank_change", f"{y}排名变化", 48),
-        ColumnSpec("company", "基金公司", 100, "left", "text"),
+        ColumnSpec("company", "公司", 100, "center", "text"),
         ColumnSpec("increment", f"{y}非货增量", 70, "right", "int", bar="bidirectional"),
         ColumnSpec("increment_rank", "增量排名", 52, "center", "int", color_scale="rank"),
         ColumnSpec("growth_pct", f"{y}增速%", 48, "center", "pct"),
@@ -134,7 +142,7 @@ def cols_business(config: ReportConfig) -> list[ColumnSpec]:
     y, q = config.ytd_tag(), config.quarter_tag()
     return [
         ColumnSpec("rank", "排名", 40),
-        ColumnSpec("company", "基金公司", 110, "left", "text"),
+        ColumnSpec("company", "公司", 110, "center", "text"),
         ColumnSpec("aum", "规模", 64, "center", "int"),
         ColumnSpec("increment", f"{y}规模增量", 72, "right", "int", bar="bidirectional"),
         ColumnSpec("growth_pct", f"{y}规模增幅%", 64, "center", "pct"),

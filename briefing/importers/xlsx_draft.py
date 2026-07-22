@@ -123,20 +123,18 @@ def _detect_dates_from_industry(raw: pd.DataFrame) -> tuple[str, str, str]:
 def _parse_industry(path: Path, sheet: str, current: str, prev_q: str, year_start: str) -> list[dict]:
     raw = pd.read_excel(path, sheet_name=sheet, header=None)
     rows: list[dict] = []
-    seen_any = False
     for i in range(1, len(raw)):
         label = raw.iloc[i, 0]
         if label is None or (isinstance(label, float) and pd.isna(label)):
-            if seen_any:
+            # 空行：若已读到主品类则结束（Q4 底稿在 FOF 后空行再接 REITs）
+            if rows:
                 break
             continue
         label = str(label).strip()
         cat = _INDUSTRY_LABEL.get(label)
         if not cat:
-            if seen_any:
-                break
+            # H1 底稿可能把 REITs/另类插在中间：跳过即可，勿中断
             continue
-        seen_any = True
         aum_c = _to_float(raw.iloc[i, 1])
         aum_pq = _to_float(raw.iloc[i, 2])
         aum_ys = _to_float(raw.iloc[i, 3])

@@ -7,7 +7,6 @@ from pathlib import Path
 from briefing.analytics.engine import (
     compute_category_summary,
     compute_company_ranking,
-    find_notable_rank_changes,
 )
 from briefing.data_loader import load_config, load_fund_data
 from briefing.models import CategoryMetrics, CompanyRanking, ReportConfig
@@ -32,42 +31,66 @@ def _fmt_pct(v: float) -> str:
     return f"{round(v * 100)}"
 
 
-def build_overview_payload(metrics: list[CategoryMetrics], config: ReportConfig) -> dict:
+def build_overview_payload(
+    metrics: list[CategoryMetrics],
+    config: ReportConfig,
+    *,
+    focus_total: CompanyRanking | None = None,
+    focus_non_money: CompanyRanking | None = None,
+) -> dict:
     narr = generate_overview_narrative(metrics, config)
     total = next((m for m in metrics if m.category == "total"), None)
     non_money = next((m for m in metrics if m.category == "non_money"), None)
+    short = config.focus_company_short
 
     opening = narr.paragraphs[0] if narr.paragraphs else ""
-    # 叙事里用「亿」，第 1 页模版习惯写「万亿」——对齐模版口径
+    # 对齐 Q4 模版：行业增速 vs 银华增速
     if total and non_money:
         y = config.current_date[2:4]
         m = int(config.current_date[4:6])
         d = int(config.current_date[6:8])
+        ft_g = _fmt_pct(focus_total.growth_pct) if focus_total else "—"
+        fn_g = _fmt_pct(focus_non_money.growth_pct) if focus_non_money else "—"
         opening = (
             f"截至{y}年{m}月{d}日，公募行业总规模{_fmt_wan_yi(total.aum_current)}万亿"
-            f"（增速{_fmt_pct(total.growth_pct)}%），"
-            f"非货{_fmt_wan_yi(non_money.aum_current)}万亿（增速{_fmt_pct(non_money.growth_pct)}%）。"
+            f"（行业增速{_fmt_pct(total.growth_pct)}% vs {short}增速{ft_g}%），"
+            f"非货{_fmt_wan_yi(non_money.aum_current)}万亿"
+            f"（行业增速{_fmt_pct(non_money.growth_pct)}% vs {short}增速{fn_g}%）。"
         )
 
-    bullets = narr.bullets[:4]
-    while len(bullets) < 4:
+    bullets = narr.bullets[:5]
+    while len(bullets) < 5:
         bullets.append("")
 
-    period_word = "上半年" if config.period_type.value == "half_year" else "本季度"
     y_short = config.current_date[2:4]
+    if config.period_type.value == "half_year":
+        growth_intro = f"{y_short}年上半年规模增速较快的品类："
+    else:
+        growth_intro = f"{y_short}年规模增速较快的品类："
+
+    # 案例：固收负增长单独放在 highlight；行情/产品注释属特殊情况，不自动编造
+    highlight = ""
+    if len(narr.paragraphs) > 1:
+        highlight = narr.paragraphs[1]
+
+    title = config.title
+    if " " not in title and title.endswith("简报"):
+        # 对齐案例「2025Q4 公募行业数据简报」
+        title = f"{config.period_label} 公募行业数据简报"
 
     return {
-        "title": f"{config.period_label}公募行业数据简报",
+        "title": title,
         "data_source_note": config.data_source_note,
         "section_title": f"一、{config.period_label}公募规模整体情况",
         "opening": opening,
-        "all_positive_intro": f"{y_short}年{period_word}，所有品类规模增速均为正：",
+        "all_positive_intro": growth_intro,
         "bullet_1": bullets[0] if bullets else "",
         "bullet_2": bullets[1] if len(bullets) > 1 else "",
         "bullet_3": bullets[2] if len(bullets) > 2 else "",
         "bullet_4": bullets[3] if len(bullets) > 3 else "",
-        "highlight_1": "值得关注的是，请人工补充季度间拐点判断；",
-        "highlight_2": "系统已填入规模与增速数字，观点句请审稿时确认。",
+        "bullet_5": bullets[4] if len(bullets) > 4 else "",
+        "highlight_1": highlight,
+        "highlight_2": "",
         "footnote": "注：REITs和另类基金未在表中注明",
     }
 
@@ -75,44 +98,22 @@ def build_overview_payload(metrics: list[CategoryMetrics], config: ReportConfig)
 def build_total_ranking_payload(rankings: list[CompanyRanking], config: ReportConfig) -> dict:
     narr = generate_total_ranking_narrative(rankings, config)
     paras = narr.paragraphs
-    focus = next((r for r in rankings if r.company == config.focus_company), None)
-
-    peer_moves = paras[0] if paras else ""
-    focus_rank = paras[1] if len(paras) > 1 else ""
-    focus_growth = paras[2] if len(paras) > 2 else ""
-
-    if focus:
-        focus_rank = (
-            f"{config.focus_company_short}总规模排名{focus.rank}，"
-            f"较年初排名{'上升' + str(focus.rank_change) + '名' if focus.rank_change > 0 else '下降' + str(abs(focus.rank_change)) + '名' if focus.rank_change < 0 else '不变'}。"
-        )
-        pos_pct = sum(1 for r in rankings if r.increment > 0) * 100 // max(len(rankings), 1)
-        focus_growth = (
-            f"{config.focus_company_short}总规模较年初增长{_fmt_yi(focus.increment)}亿，"
-            f"增速为{_fmt_pct(focus.growth_pct)}%；"
-            f"Top{config.top_n}公司中，有{pos_pct}%的公司上半年增量均为正。"
-        )
-
-    up, down = find_notable_rank_changes(rankings, threshold=3)
-    if up or down:
-        parts = []
-        for r in up[:2]:
-            parts.append(f"{r.company.replace('基金', '')}上升{r.rank_change}名")
-        for r in down[:2]:
-            parts.append(f"{r.company.replace('基金', '')}下降{abs(r.rank_change)}名")
-        peer_moves = (
-            f"总规模Top{config.top_n}公司，{'、'.join(parts)}，其他公司位次变化不大。"
-            if parts
-            else peer_moves
-        )
-
     return {
         "section_title": f"二、{config.period_label}公募基金总规模（含货币）排名",
-        "peer_moves": peer_moves,
-        "focus_rank": focus_rank,
-        "focus_growth": focus_growth,
+        "peer_moves": paras[0] if paras else "",
+        "focus_rank": paras[1] if len(paras) > 1 else "",
+        "focus_growth": paras[2] if len(paras) > 2 else "",
         "footnote_passive": "注：被动权益=ETF+联接+场外普通指数+场外指数增强",
     }
+
+
+def _rank_change_phrase(change: int) -> str:
+    if change > 0:
+        return f"上升{change}名"
+    if change < 0:
+        return f"下降{abs(change)}名"
+    return "不变"
+
 
 
 def _category_table(metrics: list[CategoryMetrics], config: ReportConfig) -> tuple[list[str], list[list[str]]]:

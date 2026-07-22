@@ -44,6 +44,20 @@ class ReportConfig:
         month = int(self.current_date[4:6])
         return f"Q{(month - 1) // 3 + 1}"
 
+    def year_end_ref(self) -> str:
+        """相对年初口径的口语参照，如 24年底。"""
+        y = int(self.year_start_date[:4])
+        # year_start 若为年末时点（如 20241231），本身即对照年
+        if self.year_start_date[4:8] == "1231":
+            return f"{str(y)[2:]}年底"
+        return f"{str(y - 1)[2:]}年底"
+
+    def prev_quarter_ref(self) -> str:
+        """上季度口语参照，如 25Q3。"""
+        y = self.previous_quarter_date[2:4]
+        m = int(self.previous_quarter_date[4:6])
+        return f"{y}Q{(m - 1) // 3 + 1}"
+
 
 @dataclass
 class CategoryMetrics:

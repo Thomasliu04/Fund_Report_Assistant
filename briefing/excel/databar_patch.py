@@ -15,8 +15,8 @@ MAIN_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
 PKG_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 
-# 与 PPT 表图一致：正红 / 负绿
-POS_COLOR = "FFE85050"
+# 与 Q4 底稿一致：正红 / 负绿；渐变
+POS_COLOR = "FFFF555A"
 NEG_COLOR = "FF00B050"
 AXIS_COLOR = "FF000000"
 ID_EXT_URI = "{B025F937-C7B1-47D3-B67F-A62EFF666E3E}"
@@ -152,7 +152,7 @@ def _x14_block(sqref: str, guid: str) -> str:
     return (
         f'<x14:conditionalFormatting xmlns:xm="{XM_NS}">'
         f'<x14:cfRule type="dataBar" id="{guid}">'
-        f'<x14:dataBar minLength="0" maxLength="100" border="1" gradient="0" '
+        f'<x14:dataBar minLength="0" maxLength="100" border="1" gradient="1" '
         f'direction="leftToRight" axisPosition="automatic" '
         f'negativeBarColorSameAsPositive="0" '
         f'negativeBarBorderColorSameAsPositive="0">'
@@ -193,6 +193,98 @@ def _attach_x14_ext(xml: str, blocks: list[str]) -> str:
             count=1,
         )
     return xml.replace("</worksheet>", f"<extLst>{x14_ext}</extLst></worksheet>", 1)
+
+
+def _inject_rule_ids_keep_color(xml: str, sqrefs: list[str]) -> tuple[str, list[tuple[str, str]]]:
+    """注入 x14:id，修正 00→FF 前缀，但保留原填充色。"""
+    rule_ids: list[tuple[str, str]] = []
+    for sqref in sqrefs:
+        guid = _guid()
+        pattern = (
+            rf'(<conditionalFormatting[^>]*sqref="{re.escape(sqref)}"[^>]*>\s*'
+            rf'<cfRule[^>]*type="dataBar"[^>]*>)(.*?)(</cfRule>)'
+        )
+
+        def _repl(m: re.Match, gid: str = guid) -> str:
+            head, body, tail = m.group(1), m.group(2), m.group(3)
+            body = re.sub(
+                r'(<color rgb=")00([0-9A-Fa-f]{6}")',
+                rf"\1FF\2",
+                body,
+            )
+            body = re.sub(r"<extLst>.*?</extLst>", "", body, flags=re.DOTALL)
+            ext = (
+                f'<extLst><ext uri="{ID_EXT_URI}" xmlns:x14="{X14_NS}">'
+                f"<x14:id>{gid}</x14:id></ext></extLst>"
+            )
+            return head + body + ext + tail
+
+        new_xml, n = re.subn(pattern, _repl, xml, count=1, flags=re.DOTALL)
+        if n == 0:
+            continue
+        xml = new_xml
+        rule_ids.append((sqref, guid))
+    return xml, rule_ids
+
+
+def _x14_gradient_block(sqref: str, guid: str, color: str) -> str:
+    """单向数据条：渐变 + 保留指定颜色（红/蓝）。"""
+    rgb = color if color.startswith("FF") or len(color) == 8 else f"FF{color}"
+    return (
+        f'<x14:conditionalFormatting xmlns:xm="{XM_NS}">'
+        f'<x14:cfRule type="dataBar" id="{guid}">'
+        f'<x14:dataBar minLength="0" maxLength="100" border="1" gradient="1" '
+        f'direction="leftToRight" axisPosition="automatic">'
+        f'<x14:cfvo type="autoMin"/>'
+        f'<x14:cfvo type="autoMax"/>'
+        f'<x14:borderColor rgb="{rgb}"/>'
+        f"</x14:dataBar></x14:cfRule>"
+        f"<xm:sqref>{sqref}</xm:sqref>"
+        f"</x14:conditionalFormatting>"
+    )
+
+
+def patch_workbook_gradient_databars(
+    xlsx_path: str | Path,
+    sheet_ranges: dict[str, list[tuple[str, str]]],
+) -> Path:
+    """
+    sheet_ranges: {sheet_name: [(sqref, rgb6_or_8), ...]}
+    为单向数据条补渐变（不改正负轴逻辑）。
+    """
+    xlsx_path = Path(xlsx_path)
+    if not sheet_ranges:
+        return xlsx_path
+
+    with TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        with zipfile.ZipFile(xlsx_path, "r") as zin:
+            zin.extractall(root)
+
+        name_to_path = _sheet_paths_by_name(root)
+        for sheet_name, ranges in sheet_ranges.items():
+            path = name_to_path.get(sheet_name)
+            if path is None or not ranges:
+                continue
+            xml = path.read_text(encoding="utf-8")
+            sqrefs = [r for r, _ in ranges]
+            color_by = {r: c for r, c in ranges}
+            xml, rule_ids = _inject_rule_ids_keep_color(xml, sqrefs)
+            blocks = [
+                _x14_gradient_block(sqref, guid, color_by.get(sqref, POS_COLOR))
+                for sqref, guid in rule_ids
+            ]
+            xml = _attach_x14_ext(xml, blocks)
+            path.write_text(xml, encoding="utf-8")
+
+        out_tmp = root / "_patched.xlsx"
+        with zipfile.ZipFile(out_tmp, "w", zipfile.ZIP_DEFLATED) as zout:
+            for f in root.rglob("*"):
+                if f.is_file() and f != out_tmp:
+                    zout.write(f, f.relative_to(root).as_posix())
+        xlsx_path.write_bytes(out_tmp.read_bytes())
+
+    return xlsx_path
 
 
 def patch_workbook_bidirectional_databars(

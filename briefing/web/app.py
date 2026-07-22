@@ -19,9 +19,19 @@ WEB_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = ROOT / "data" / "_web_uploads"
 JOBS_DIR = ROOT / "data" / "_web_jobs"
 OUTPUT_DIR = ROOT / "output"
-TEMPLATE_PPTX = ROOT / "templates" / "25H1_template.pptx"
-SLIDE_MAP = ROOT / "config" / "slide_map.yaml"
+TEMPLATE_H1 = ROOT / "templates" / "25H1_template.pptx"
+TEMPLATE_Q4 = ROOT / "templates" / "25Q4_template.pptx"
+SLIDE_MAP_H1 = ROOT / "config" / "slide_map.yaml"
+SLIDE_MAP_Q4 = ROOT / "config" / "slide_map_q4.yaml"
 REPORT_TEMPLATE = ROOT / "config" / "report_template.yaml"
+
+
+def _template_and_map(period_label: str) -> tuple[Path, Path]:
+    """统一使用 Q4 版式（与案例段落槽位一致）；缺文件时回退 H1。"""
+    if TEMPLATE_Q4.exists() and SLIDE_MAP_Q4.exists():
+        return TEMPLATE_Q4, SLIDE_MAP_Q4
+    return TEMPLATE_H1, SLIDE_MAP_H1
+
 
 app = FastAPI(title="季度简报辅助系统", version="1.0")
 app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
@@ -176,22 +186,59 @@ async def upload_draft(file: UploadFile = File(...)) -> dict:
     xlsx_path.write_bytes(content)
 
     from briefing.importers.xlsx_draft import detect_dates, import_draft_xlsx
+    from briefing.importers.normalize_draft import normalize_draft_xlsx
+    from briefing.importers.validate_draft import validate_draft_xlsx
+
+    # 先对原始上传做健全性检查（规范化前），便于作者对照底稿改数
+    draft_report = validate_draft_xlsx(xlsx_path)
 
     try:
+        # 上传后先规范化为案例口径，再导入指标
+        normalize_draft_xlsx(xlsx_path, xlsx_path)
         df = import_draft_xlsx(xlsx_path, output_csv=jdir / "fund_metrics.csv")
         dates = detect_dates(xlsx_path)
     except Exception as exc:
         raise HTTPException(400, f"底稿解析失败：{exc}") from exc
 
-    # 从文件名猜测期别
-    period_guess = "25H1"
+    # 期别：优先文件名；否则按检测到的日期推断（如 20260630 → 26H1）
+    period_guess = ""
     stem = Path(name).stem
-    for token in ("25H1", "25H2", "25Q1", "25Q2", "25Q3", "25Q4", "24H1", "24H2"):
+    for token in (
+        "26H1",
+        "26H2",
+        "26Q1",
+        "26Q2",
+        "26Q3",
+        "26Q4",
+        "25H1",
+        "25H2",
+        "25Q1",
+        "25Q2",
+        "25Q3",
+        "25Q4",
+        "24H1",
+        "24H2",
+    ):
         if token in stem.upper().replace(" ", ""):
             period_guess = token
             break
-
-    period_type = "half_year" if "H" in period_guess else "quarter"
+    if not period_guess:
+        cur = dates.get("current", "")
+        if len(cur) >= 6 and cur.isdigit():
+            yy, mm = cur[2:4], int(cur[4:6])
+            if mm in (1, 2, 3):
+                period_guess, period_type = f"{yy}Q1", "quarter"
+            elif mm in (4, 5, 6):
+                period_guess, period_type = f"{yy}H1", "half_year"
+            elif mm in (7, 8, 9):
+                period_guess, period_type = f"{yy}Q3", "quarter"
+            else:
+                # 12 月：默认按季度简报 Q4（与现网案例一致）
+                period_guess, period_type = f"{yy}Q4", "quarter"
+        else:
+            period_guess, period_type = "25H1", "half_year"
+    else:
+        period_type = "half_year" if "H" in period_guess else "quarter"
 
     return {
         "job_id": job_id,
@@ -202,7 +249,15 @@ async def upload_draft(file: UploadFile = File(...)) -> dict:
         "dates": dates,
         "period_label": period_guess,
         "period_type": period_type,
-        "message": "底稿导入成功，请确认期别与日期后生成 PPT",
+        "draft_validation": draft_report.to_dict(),
+        "message": (
+            "底稿导入成功，请确认期别与日期后生成 PPT"
+            + (
+                f"；校验有 {len(draft_report.errors)} 个 error / {len(draft_report.warnings)} 个 warning"
+                if draft_report.errors or draft_report.warnings
+                else ""
+            )
+        ),
     }
 
 
@@ -215,8 +270,9 @@ def generate(req: GenerateRequest) -> dict:
     if not csv_path.exists():
         raise HTTPException(400, "请先上传并导入底稿")
 
-    if not TEMPLATE_PPTX.exists():
-        raise HTTPException(500, f"缺少 PPT 模版：{TEMPLATE_PPTX}")
+    template_pptx, slide_map = _template_and_map(req.period_label)
+    if not template_pptx.exists():
+        raise HTTPException(500, f"缺少 PPT 模版：{template_pptx}")
 
     config_path = jdir / "report.yaml"
     _write_config(config_path, req)
@@ -233,17 +289,19 @@ def generate(req: GenerateRequest) -> dict:
         info = run_full_deck(
             config_path=config_path,
             data_dir=jdir,
-            template_path=TEMPLATE_PPTX,
-            slide_map_path=SLIDE_MAP,
+            template_path=template_pptx,
+            slide_map_path=slide_map,
             output_pptx=out_pptx,
             output_xlsx=out_xlsx,
             work_dir=work_dir,
             draft_xlsx=jdir / "draft.xlsx",
+            paste_tables=False,
+            strict=False,
         )
         preview = _preview_focus(jdir, config_path)
     except Exception as exc:
-        tb = traceback.format_exc(limit=5)
-        raise HTTPException(500, f"生成失败：{exc}\n{tb}") from exc
+        # 网页端只展示可读原因；完整栈写日志式短摘要
+        raise HTTPException(500, f"生成失败：{exc}") from exc
 
     # 中间 PNG 可删；xlsx/pptx 留在 output/
     if work_dir.exists():
@@ -256,6 +314,9 @@ def generate(req: GenerateRequest) -> dict:
         "xlsx": str(Path(info["xlsx"]).relative_to(ROOT)) if info.get("xlsx") else str(out_xlsx.relative_to(ROOT)),
         "xlsx_name": xlsx_name,
         "n_slides": info.get("n_slides"),
+        "table_images_from": info.get("table_images_from", "skipped_manual_paste"),
+        "narrative_source": info.get("narrative_source"),
+        "narrative_report": info.get("narrative_report", ""),
         "preview": preview,
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }

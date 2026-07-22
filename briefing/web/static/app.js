@@ -44,6 +44,21 @@
     $("year_start").value = data.dates.year_start || "";
   }
 
+  function validationSummary(data) {
+    const v = data.draft_validation;
+    if (!v) return "";
+    const errs = (v.findings || []).filter((f) => f.severity === "error");
+    const warns = (v.findings || []).filter((f) => f.severity === "warning");
+    if (!errs.length && !warns.length) return "\n底稿校验：通过";
+    const lines = [`\n底稿校验：error ${errs.length} · warning ${warns.length}`];
+    [...errs, ...warns].slice(0, 8).forEach((f) => {
+      const loc = f.sheet ? `[${f.sheet}] ` : "";
+      lines.push(`- ${f.severity}: ${loc}${f.message}`);
+    });
+    if (errs.length + warns.length > 8) lines.push("- …（详见 validate-draft）");
+    return lines.join("\n");
+  }
+
   function escapeHtml(s) {
     return String(s)
       .replaceAll("&", "&amp;")
@@ -70,9 +85,10 @@
       fillMeta(data);
       fillForm(data);
       enableSteps();
+      const hasErr = data.draft_validation && data.draft_validation.error_count > 0;
       setStatus(
-        "ok",
-        `${data.message}\n识别日期：期末 ${data.dates.current} · 上季 ${data.dates.previous_quarter} · 年初 ${data.dates.year_start}\n品类：${data.categories.join("、")}`
+        hasErr ? "error" : "ok",
+        `${data.message}\n识别日期：期末 ${data.dates.current} · 上季 ${data.dates.previous_quarter} · 年初 ${data.dates.year_start}\n品类：${data.categories.join("、")}${validationSummary(data)}`
       );
     } catch (err) {
       setStatus("error", String(err.message || err));
@@ -132,9 +148,10 @@
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail || "生成失败"));
 
+      const src = data.table_images_from === "excel" ? "表图来自 Excel 条件格式导出" : "表图为程序绘制（Excel 静默导出未成功）";
       setStatus(
         "ok",
-        `生成完成（${data.n_slides} 页）· ${data.generated_at}\nPPT：${data.pptx_name}\nExcel：${data.xlsx_name || "—"}`
+        `生成完成（${data.n_slides} 页）· ${data.generated_at}\nPPT：${data.pptx_name}\nExcel：${data.xlsx_name || "—"}\n${src}`
       );
       btnDownload.hidden = false;
       btnDownload.href = `/api/download/${state.jobId}?kind=pptx`;

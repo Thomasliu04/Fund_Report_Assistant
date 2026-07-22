@@ -1,0 +1,150 @@
+# 全册 slide map — templates/25Q4_template.pptx（10 页）
+# 表均为贴图；文字整段替换 + PNG 表图（数据条/色阶）等比适配
+
+template: templates/25Q4_template.pptx
+slide_size: [13.33, 7.50]
+
+slides:
+  - index: 0
+    id: overview
+    narrative_shape: "矩形 1"
+    paragraphs:
+      0: title
+      2: data_source_note
+      3: section_title
+      4: opening
+      5: all_positive_intro
+      6: bullet_1
+      7: bullet_2
+      8: bullet_3
+      9: bullet_4
+      10: bullet_5
+      12: highlight_1
+    footnote_shape: "矩形 4"
+    footnote_key: footnote
+    picture_shape: "图片 10"
+    table_image: category_summary
+
+  - index: 1
+    id: total_ranking
+    narrative_shape: "矩形 2"
+    paragraphs:
+      0: section_title
+      1: peer_moves
+      2: focus_rank
+      3: focus_growth
+    footnote_shape: "文本框 10"
+    footnote_key: footnote_passive
+    picture_shape: "图片 9"
+    table_image: total_ranking_top30
+
+  - index: 2
+    id: non_money_ranking
+    narrative_shape: "矩形 2"
+    paragraphs:
+      0: section_title
+      1: p1
+      2: p2
+      3: p3
+    footnote_shape: "文本框 8"
+    footnote_key: footnote_passive
+    picture_shape: "图片 7"
+    table_image: non_money_ranking
+
+  - index: 3
+    id: increment_overview
+    narrative_shape: "矩形 2"
+    paragraphs:
+      0: section_title
+      1: p1
+      2: p2
+      3: p3
+    picture_shape: "图片 7"
+    table_image: increment_overview
+
+  - index: 4
+    id: active_equity
+    narrative_shape: "矩形 2"
+    paragraphs:
+      0: section_title
+      1: p1
+      2: p2
+      3: p3
+      4: p4
+    extra_text:
+      - shape: "矩形 3"
+        key: subtitle
+    picture_shape: "图片 14"
+    table_image: active_equity
+
+  - index: 5
+    id: etf_dual
+    narrative_shape: "矩形 2"
+    paragraphs:
+      0: p0
+      1: p1
+    extra_text:
+      - shape: "矩形 3"
+        key: sub_with
+      - shape: "矩形 4"
+        key: sub_without
+    pictures:
+      - shape: "图片 13"
+        table_image: etf_with_link
+      - shape: "图片 19"
+        table_image: etf_no_link
+
+  - index: 6
+    id: money
+    narrative_shape: "矩形 5"
+    paragraphs:
+      0: label_line
+      1: p1
+    extra_text:
+      - shape: "矩形 3"
+        key: title
+    picture_shape: "图片 8"
+    table_image: money
+
+  - index: 7
+    id: fixed_income
+    narrative_shape: "矩形 5"
+    paragraphs:
+      0: label_line
+      1: p1
+      2: p2
+      3: p3
+    extra_text:
+      - shape: "矩形 3"
+        key: title
+    footnote_shape: "文本框 9"
+    footnote_key: footnote_fi
+    picture_shape: "图片 8"
+    table_image: fixed_income
+
+  - index: 8
+    id: fixed_income_plus
+    narrative_shape: "矩形 5"
+    paragraphs:
+      0: label_line
+      1: p1
+      2: p2
+    extra_text:
+      - shape: "矩形 3"
+        key: title
+    footnote_shape: "文本框 7"
+    footnote_key: footnote_fi
+    picture_shape: "图片 9"
+    table_image: fixed_income_plus
+
+  - index: 9
+    id: fof
+    narrative_shape: "矩形 5"
+    paragraphs:
+      0: label_line
+      1: p1
+    extra_text:
+      - shape: "矩形 3"
+        key: title
+    picture_shape: "图片 6"
+    table_image: fof
