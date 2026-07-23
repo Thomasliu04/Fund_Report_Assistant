@@ -30,7 +30,9 @@ from briefing.excel.sheet_export import excel_available, export_sheets_via_excel
 from briefing.excel.styled_table import ColumnSpec, render_styled_table
 from briefing.render.pptx_filler import (
     _find_shape,
+    add_table_placeholder,
     load_slide_map,
+    remove_picture,
     replace_narrative_paragraphs,
     replace_picture_fit,
 )
@@ -94,6 +96,19 @@ def _default_xlsx_path(output_pptx: Path) -> Path:
             stem = stem[: -len(suffix)]
             break
     return output_pptx.with_name(f"{stem}_tables.xlsx")
+
+
+def _is_tables_workbook(path: Path) -> bool:
+    """判断是否为导出的终表工作簿（01_行业变化…）。"""
+    try:
+        from openpyxl import load_workbook
+
+        wb = load_workbook(path, read_only=True, data_only=False)
+        names = set(wb.sheetnames)
+        wb.close()
+    except Exception:
+        return False
+    return "01_行业变化" in names or "02_总规模" in names
 
 
 def _render_table_images(
@@ -219,6 +234,8 @@ def run_full_deck(
     draft_path = Path(draft_xlsx) if draft_xlsx else None
     tables_path = Path(tables_xlsx) if tables_xlsx else None
     narrative_report = ""
+    narrative_source = "csv"
+    csv_narratives: dict | None = None
 
     if draft_path and draft_path.exists():
         from briefing.deck.final_tables import load_final_tables
@@ -227,22 +244,12 @@ def run_full_deck(
         normalized = work_dir / "draft_normalized.xlsx"
         normalize_draft_xlsx(draft_path, normalized)
         excel_sheets = load_final_tables(normalized)
-        narratives, book = build_narratives_from_tables(config, final_sheets=excel_sheets)
-        narrative_report = book.format_issues()
-        if strict and book.errors:
-            raise ValueError(f"终表读数失败（strict）：\n{narrative_report}")
     elif tables_path and tables_path.exists():
-        narratives, book = build_narratives_from_tables(config, tables_xlsx=str(tables_path))
-        narrative_report = book.format_issues()
-        if strict and book.errors:
-            raise ValueError(f"终表读数失败（strict）：\n{narrative_report}")
-        # 已有导出表：不再 load_final_tables 回写，避免覆盖人工调过的 tables.xlsx
+        # 直接使用已导出的终表；不再从 CSV 成文
         excel_sheets = []
     else:
-        # 无终表：回退 CSV 叙事（兼容旧路径）
-        narratives = build_all_narratives(df, config)
-        excel_sheets = _build_sheets_from_csv(df, config, narratives)
-        narrative_report = "未提供底稿/终表，文字来自 CSV 指标（可能与人工贴表不一致）"
+        csv_narratives = build_all_narratives(df, config)
+        excel_sheets = _build_sheets_from_csv(df, config, csv_narratives)
 
     output_pptx = Path(output_pptx)
     output_pptx.parent.mkdir(parents=True, exist_ok=True)
@@ -263,6 +270,25 @@ def run_full_deck(
     elif tables_path and tables_path.exists() and xlsx_path.resolve() != tables_path.resolve():
         xlsx_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(tables_path, xlsx_path)
+
+    # 关键：文字必须从「最终写出的 tables.xlsx」读入，与人工贴表同一文件
+    if xlsx_path.exists() and _is_tables_workbook(xlsx_path):
+        narratives, book = build_narratives_from_tables(config, tables_xlsx=str(xlsx_path))
+        narrative_report = book.format_issues()
+        narrative_source = "tables"
+        if strict and book.errors:
+            raise ValueError(f"终表读数失败（strict）：\n{narrative_report}")
+    elif draft_path and draft_path.exists():
+        raise ValueError(
+            f"已提供底稿但未能写出可读终表：{xlsx_path}。请先 export-tables 或检查底稿。"
+        )
+    else:
+        narratives = csv_narratives or build_all_narratives(df, config)
+        narrative_report = (
+            "警告：未提供底稿/终表，文字来自 CSV 指标（可能与 Excel 终表不一致）。"
+            "请使用 --draft-xlsx 或 --tables-xlsx。"
+        )
+        narrative_source = "csv"
 
     images: dict[str, Path] = {}
     used_excel = False
@@ -326,6 +352,21 @@ def run_full_deck(
             for pic in slide_cfg.get("pictures", []):
                 if pic["table_image"] in images:
                     replace_picture_fit(slide, pic["shape"], images[pic["table_image"]])
+        else:
+            # 不贴新表时必须去掉模版里的旧 Q4 表图，否则看起来像「完全旧稿」
+            pic_names: list[str] = []
+            if "picture_shape" in slide_cfg:
+                pic_names.append(slide_cfg["picture_shape"])
+            for pic in slide_cfg.get("pictures", []):
+                pic_names.append(pic["shape"])
+            for name in pic_names:
+                try:
+                    shape = _find_shape(slide, name)
+                except KeyError:
+                    continue
+                left, top, width, height = shape.left, shape.top, shape.width, shape.height
+                remove_picture(slide, name)
+                add_table_placeholder(slide, left=left, top=top, width=width, height=height)
 
     prs.save(str(output_pptx))
     return {
@@ -338,6 +379,6 @@ def run_full_deck(
             "excel" if used_excel else ("pil" if images else "skipped_manual_paste")
         ),
         "paste_tables": paste_tables,
-        "narrative_source": "tables" if (draft_path or tables_path) else "csv",
+        "narrative_source": narrative_source,
         "narrative_report": narrative_report,
     }

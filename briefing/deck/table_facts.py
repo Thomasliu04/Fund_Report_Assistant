@@ -223,13 +223,17 @@ def _map_role_indices(headers: list[str], sheet_id: str) -> dict[str, int | None
     )
     aum_i = _pick_col(
         h,
-        lambda x: x in {"总规模", "非货总计", "非货规模", "规模", "货币规模"},
+        lambda x: x in {"总规模", "非货总计", "非货规模", "规模", "货币规模", "期末"},
         lambda x: x == "规模" or (x.endswith("规模") and "增量" not in x and "增幅" not in x and "上年末" not in x),
     )
-    # 行业表：期末规模 = 第一个 YYYYMMDD
+    # 行业表：期末规模 = 「期末」或第一个 YYYYMMDD 列（旧表头）
     if sheet_id == "category":
+        end_i = _col_by_equals(h, "期末")
         date_cols = [i for i, x in enumerate(h) if re.match(r"^\d{8}", x)]
-        aum_i = date_cols[0] if date_cols else aum_i
+        if end_i is not None:
+            aum_i = end_i
+        elif date_cols:
+            aum_i = date_cols[0]
 
     ytd_inc = _pick_col(
         h,

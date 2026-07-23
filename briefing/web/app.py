@@ -64,10 +64,27 @@ def _safe_job_id(job_id: str) -> str:
     return job_id
 
 
+def _normalize_period(period_label: str, period_type: str, current: str) -> tuple[str, str, str]:
+    """返回 (period_type, ytd_tag, quarter_tag)。H1/H2 标签强制 half_year。"""
+    label = (period_label or "").strip()
+    lab_u = label.upper()
+    yy = current[2:4] if len(current) >= 4 else "25"
+    month = int(current[4:6]) if len(current) >= 6 else 12
+    q_tag = f"Q{(month - 1) // 3 + 1}"
+    if "H1" in lab_u or "H2" in lab_u:
+        return "half_year", label or f"{yy}H1", q_tag
+    if period_type == "half_year":
+        return "half_year", label or f"{yy}H1", q_tag
+    return "quarter", label if label and "Q" in lab_u else f"{yy}年", q_tag
+
+
 def _write_config(path: Path, req: GenerateRequest) -> None:
     raw = yaml.safe_load(REPORT_TEMPLATE.read_text(encoding="utf-8"))
+    period_type, ytd_tag, q_tag = _normalize_period(
+        req.period_label, req.period_type, req.current
+    )
     raw["report"]["period_label"] = req.period_label
-    raw["report"]["period_type"] = req.period_type
+    raw["report"]["period_type"] = period_type
     raw["dates"] = {
         "current": req.current,
         "previous_quarter": req.previous_quarter,
@@ -75,10 +92,6 @@ def _write_config(path: Path, req: GenerateRequest) -> None:
     }
     raw["focus_company"] = req.focus_company
     raw["focus_company_short"] = req.focus_company_short
-    yy = req.current[2:4] if len(req.current) >= 4 else "25"
-    month = int(req.current[4:6]) if len(req.current) >= 6 else 12
-    q_tag = f"Q{(month - 1) // 3 + 1}"
-    ytd_tag = req.period_label if req.period_type == "half_year" else f"{yy}年"
     raw["column_labels"] = {"ytd": ytd_tag, "quarter": q_tag}
     path.write_text(
         yaml.safe_dump(raw, allow_unicode=True, sort_keys=False),
@@ -86,12 +99,52 @@ def _write_config(path: Path, req: GenerateRequest) -> None:
     )
 
 
-def _preview_focus(data_dir: Path, config_path: Path) -> dict[str, Any]:
-    """生成后快速核对银华关键指标。"""
+def _preview_focus(data_dir: Path, config_path: Path, tables_xlsx: Path | None = None) -> dict[str, Any]:
+    """生成后快速核对银华关键指标（优先读终表 Excel，与 PPT 文字同口径）。"""
+    from briefing.data_loader import load_config
+    from briefing.deck.table_facts import find_focus, load_table_book_from_xlsx
+
+    config = load_config(config_path)
+    focus = config.focus_company_short or config.focus_company
+    items: list[dict[str, str]] = []
+
+    if tables_xlsx and tables_xlsx.exists():
+        book = load_table_book_from_xlsx(tables_xlsx)
+        cat = book.get("category")
+        ind = next((r for r in (cat.rows if cat else []) if r.name == "合计"), None)
+        industry = (
+            f"{(ind.aum or 0)/10000:.1f}万亿 · 增速{round((ind.growth_pct or 0)*100)}%"
+            if ind and ind.aum is not None
+            else "—"
+        )
+
+        def add(label: str, sheet_id: str) -> None:
+            sh = book.get(sheet_id)
+            row = find_focus(sh.rows, config.focus_company, focus) if sh else None
+            if not row:
+                items.append({"label": label, "text": "未找到"})
+                return
+            items.append(
+                {
+                    "label": label,
+                    "text": f"#{row.rank} · {row.aum:.0f}亿 · 增量{(row.increment or 0):+.0f}",
+                }
+            )
+
+        add("总规模", "total")
+        add("非货", "non_money")
+        add("主动权益", "active_equity")
+        add("货币", "money")
+        add("固收", "fixed_income")
+        add("固收+", "fixed_income_plus")
+        add("FOF", "fof")
+        return {"industry": industry, "focus": focus, "items": items}
+
+    # 回退 CSV（无终表时）
     from dataclasses import replace
 
     from briefing.analytics.engine import compute_company_ranking
-    from briefing.data_loader import load_config, load_fund_data
+    from briefing.data_loader import load_fund_data
     from briefing.deck.data_tables import (
         build_business_rows,
         build_category_rows,
@@ -100,10 +153,8 @@ def _preview_focus(data_dir: Path, config_path: Path) -> dict[str, Any]:
         company_df,
     )
 
-    config = load_config(config_path)
     df = load_fund_data(data_dir)
     cats = {r["label"]: r for r in build_category_rows(df, config)}
-    focus = config.focus_company_short or config.focus_company
 
     def find(rows):
         return next((r for r in rows if focus in str(r["company"])), None)
@@ -115,24 +166,19 @@ def _preview_focus(data_dir: Path, config_path: Path) -> dict[str, Any]:
         (r for r in compute_company_ranking(cos, wide, "fixed_income_plus") if focus in r.company),
         None,
     )
-
-    items = []
     total = find(build_total_rows(df, config))
     nm = find(build_non_money_rows(df, config))
     active = find(build_business_rows(df, config, "active_equity"))
     money = find(build_business_rows(df, config, "money"))
     fof = find(build_business_rows(df, config, "fof"))
 
-    def add(label: str, row, aum=True):
+    def add_row(label: str, row) -> None:
         if not row:
             items.append({"label": label, "text": "未找到"})
             return
         if hasattr(row, "rank"):
             items.append(
-                {
-                    "label": label,
-                    "text": f"#{row.rank} · {row.aum:.0f}亿 · 增量{row.increment:+.0f}",
-                }
+                {"label": label, "text": f"#{row.rank} · {row.aum:.0f}亿 · 增量{row.increment:+.0f}"}
             )
         else:
             items.append(
@@ -148,13 +194,13 @@ def _preview_focus(data_dir: Path, config_path: Path) -> dict[str, Any]:
         if ind
         else "—"
     )
-    add("总规模", total)
-    add("非货", nm)
-    add("主动权益", active)
-    add("货币", money)
-    add("固收", fi)
-    add("固收+", fip)
-    add("FOF", fof)
+    add_row("总规模", total)
+    add_row("非货", nm)
+    add_row("主动权益", active)
+    add_row("货币", money)
+    add_row("固收", fi)
+    add_row("固收+", fip)
+    add_row("FOF", fof)
     return {"industry": industry, "focus": focus, "items": items}
 
 
@@ -191,6 +237,10 @@ async def upload_draft(file: UploadFile = File(...)) -> dict:
 
     # 先对原始上传做健全性检查（规范化前），便于作者对照底稿改数
     draft_report = validate_draft_xlsx(xlsx_path)
+    (jdir / "draft_validation.yaml").write_text(
+        yaml.safe_dump(draft_report.to_dict(), allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
 
     try:
         # 上传后先规范化为案例口径，再导入指标
@@ -251,14 +301,48 @@ async def upload_draft(file: UploadFile = File(...)) -> dict:
         "period_type": period_type,
         "draft_validation": draft_report.to_dict(),
         "message": (
-            "底稿导入成功，请确认期别与日期后生成 PPT"
-            + (
-                f"；校验有 {len(draft_report.errors)} 个 error / {len(draft_report.warnings)} 个 warning"
-                if draft_report.errors or draft_report.warnings
-                else ""
+            (
+                f"底稿有 {len(draft_report.errors)} 个校验 error，请先改底稿后重新上传；"
+                f"当前禁止生成（另有 {len(draft_report.warnings)} 个 warning）"
+                if draft_report.errors
+                else "底稿导入成功，请确认期别与日期后生成 PPT"
+                + (
+                    f"；校验有 {len(draft_report.warnings)} 个 warning（可不拦生成）"
+                    if draft_report.warnings
+                    else ""
+                )
             )
         ),
     }
+
+
+def _require_draft_ok(jdir: Path) -> None:
+    """出报前强制：上传时校验无 error，否则禁止生成。"""
+    cached = jdir / "draft_validation.yaml"
+    if not cached.exists():
+        raise HTTPException(400, "缺少底稿校验结果，请重新上传底稿")
+    try:
+        report_dict = yaml.safe_load(cached.read_text(encoding="utf-8")) or {}
+    except Exception as exc:
+        raise HTTPException(400, f"无法读取底稿校验结果，请重新上传：{exc}") from exc
+
+    err_n = int(report_dict.get("error_count") or 0)
+    if err_n <= 0:
+        return
+
+    findings = report_dict.get("findings") or []
+    lines = [
+        f"底稿仍有 {err_n} 个校验 error，已禁止生成。请按提示改底稿后重新上传。",
+    ]
+    for f in findings:
+        if f.get("severity") != "error":
+            continue
+        loc = f"[{f.get('sheet')}] " if f.get("sheet") else ""
+        lines.append(f"- {loc}{f.get('message', '')}")
+        if len(lines) >= 9:
+            lines.append("- …（完整列表见 validate-draft）")
+            break
+    raise HTTPException(400, "\n".join(lines))
 
 
 @app.post("/api/generate")
@@ -269,6 +353,8 @@ def generate(req: GenerateRequest) -> dict:
     csv_path = jdir / "fund_metrics.csv"
     if not csv_path.exists():
         raise HTTPException(400, "请先上传并导入底稿")
+
+    _require_draft_ok(jdir)
 
     template_pptx, slide_map = _template_and_map(req.period_label)
     if not template_pptx.exists():
@@ -296,9 +382,9 @@ def generate(req: GenerateRequest) -> dict:
             work_dir=work_dir,
             draft_xlsx=jdir / "draft.xlsx",
             paste_tables=False,
-            strict=False,
+            strict=True,
         )
-        preview = _preview_focus(jdir, config_path)
+        preview = _preview_focus(jdir, config_path, tables_xlsx=Path(info["xlsx"]) if info.get("xlsx") else out_xlsx)
     except Exception as exc:
         # 网页端只展示可读原因；完整栈写日志式短摘要
         raise HTTPException(500, f"生成失败：{exc}") from exc

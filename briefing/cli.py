@@ -58,9 +58,9 @@ def main(argv: list[str] | None = None) -> int:
     tables.add_argument("--period", default="", help="期别标签，如 25Q4")
     tables.add_argument("--focus", default="银华", help="高亮公司简称")
     tables.add_argument(
-        "--strict",
+        "--force",
         action="store_true",
-        help="底稿校验存在 error 时中止导出",
+        help="即使底稿校验有 error 也继续导出（默认有 error 则中止）",
     )
     tables.add_argument(
         "--skip-validate",
@@ -178,8 +178,8 @@ def main(argv: list[str] | None = None) -> int:
             report = validate_draft_xlsx(args.xlsx)
             print(report.format_text())
             print()
-            if args.strict and not report.ok:
-                print("已启用 --strict：存在 error，中止导出。请按上方提示改底稿后重试。")
+            if (not report.ok) and (not args.force):
+                print("存在 error，已中止导出。请改底稿后重试；若确认继续请加 --force。")
                 return 2
 
         out = export_tables_from_final_xlsx(

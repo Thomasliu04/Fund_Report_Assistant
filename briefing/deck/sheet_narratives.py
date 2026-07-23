@@ -53,16 +53,44 @@ def _rank_change_text(change: int | None, *, unit: str = "名") -> str:
 
 
 def _period_span(config: ReportConfig) -> str:
-    if config.period_type == PeriodType.HALF_YEAR:
+    """按期别标签推断口语（优先 label 中的 H1/H2，避免网页误选 quarter）。"""
+    lab = (config.period_label or "").upper()
+    if "H1" in lab:
         return "上半年"
+    if "H2" in lab:
+        return "下半年"
+    if config.period_type == PeriodType.HALF_YEAR:
+        # 无 H 标签时，按期末月份兜底
+        try:
+            mm = int(config.current_date[4:6])
+            if mm <= 6:
+                return "上半年"
+            return "下半年"
+        except (TypeError, ValueError, IndexError):
+            return "上半年"
     return "全年"
 
 
 def _growth_intro(config: ReportConfig) -> str:
     y = config.current_date[2:4]
-    if config.period_type == PeriodType.HALF_YEAR:
-        return f"{y}年上半年规模增速较快的品类："
+    span = _period_span(config)
+    if span in {"上半年", "下半年"}:
+        return f"{y}年{span}规模增速较快的品类："
     return f"{y}年规模增速较快的品类："
+
+
+def _ytd_phrase(config: ReportConfig) -> str:
+    """增速/增量前的期别用语：优先 period_label（26H1），避免误写成「26年全年」。"""
+    lab = (config.period_label or "").strip()
+    if lab and ("H1" in lab.upper() or "H2" in lab.upper()):
+        return lab
+    tag = (config.ytd_tag() or "").strip()
+    span = _period_span(config)
+    if tag and ("H1" in tag.upper() or "H2" in tag.upper()):
+        return tag
+    if span in {"上半年", "下半年"}:
+        return span
+    return tag or span
 
 
 def _short_co(name: str) -> str:
@@ -158,7 +186,7 @@ def _build_overview(book: TableBook, config: ReportConfig) -> dict:
     fi = by_name.get("固收")
     if fi and (fi.increment or 0) < 0:
         highlight = (
-            f"{config.ytd_tag()}{_period_span(config)}，固收规模减少{round(abs(fi.increment or 0))}亿，"
+            f"{_ytd_phrase(config)}，固收规模减少{round(abs(fi.increment or 0))}亿，"
             f"增速{_fmt_pct(fi.growth_pct)}%。"
         )
 
@@ -302,9 +330,8 @@ def _build_non_money(book: TableBook, config: ReportConfig) -> dict:
     )
     vs_y = "高于" if (focus.growth_pct or 0) >= avg_g else "低于"
     vs_q = "高于" if (focus.q_growth_pct or 0) >= avg_qg else "低于"
-    span = _period_span(config)
     p2 = (
-        f"{short}非货{config.ytd_tag()}{span}增长{_fmt_yi(focus.increment)}亿，"
+        f"{short}非货{_ytd_phrase(config)}增长{_fmt_yi(focus.increment)}亿，"
         f"增速{_fmt_pct(focus.growth_pct)}%，"
         f"{vs_y}Top{config.top_n}公司（{_fmt_pct(avg_g)}%）；"
         f"{config.quarter_tag()}增量{_fmt_yi(focus.q_increment)}亿，增速{_fmt_pct(focus.q_growth_pct)}%，"
@@ -345,13 +372,13 @@ def _build_increment(book: TableBook, config: ReportConfig) -> dict:
     span = _period_span(config)
     if q_rank and q_inc is not None:
         p1 = (
-            f"{short}{config.ytd_tag()}非货增量为{_fmt_yi(focus.increment)}亿，"
+            f"{short}{_ytd_phrase(config)}非货增量为{_fmt_yi(focus.increment)}亿，"
             f"在全行业排名第{inc_rank}名；"
             f"{q_tag}，非货增量为{_fmt_yi(q_inc)}亿，在全行业排名第{q_rank}名。"
         )
     else:
         p1 = (
-            f"{short}{config.ytd_tag()}非货增量为{_fmt_yi(focus.increment)}亿，"
+            f"{short}{_ytd_phrase(config)}非货增量为{_fmt_yi(focus.increment)}亿，"
             f"在全行业排名第{inc_rank}名。"
         )
 
@@ -538,7 +565,7 @@ def _build_fi(book: TableBook, config: ReportConfig) -> dict:
         pq_q = config.quarter_tag()
         # 上一季口语：prev_quarter_ref
         p2 = (
-            f"{config.focus_company_short}固收{config.ytd_tag()}规模增量{_fmt_yi(focus.increment)}亿，"
+            f"{config.focus_company_short}固收{_ytd_phrase(config)}规模增量{_fmt_yi(focus.increment)}亿，"
             f"增速{_fmt_pct(focus.growth_pct)}%，持营增量{_fmt_yi(hold)}亿；"
             f"{config.focus_company_short}固收位列第{focus.rank}名，较{ye}排名"
             f"{_rank_change_text(focus.rank_change)}，"

@@ -174,6 +174,42 @@ def replace_narrative_paragraphs(
         )
 
 
+def remove_picture(slide, shape_name: str) -> bool:
+    """删除幻灯片上指定名称的图片（用于去掉模版残留的旧表图）。"""
+    try:
+        shape = _find_shape(slide, shape_name)
+    except KeyError:
+        return False
+    sp = shape._element
+    sp.getparent().remove(sp)
+    return True
+
+
+def add_table_placeholder(
+    slide,
+    *,
+    left,
+    top,
+    width,
+    height,
+    text: str = "【请从本期 tables.xlsx 对应 sheet 复制表图粘贴至此】",
+) -> None:
+    """在原图表位置放提示框，避免空白页不知道该贴哪里。"""
+    from pptx.enum.text import PP_ALIGN
+    from pptx.util import Pt
+
+    box = slide.shapes.add_textbox(left, top, width, height)
+    box.name = "表图占位提示"
+    tf = box.text_frame
+    tf.word_wrap = True
+    p = tf.paragraphs[0]
+    p.text = text
+    p.alignment = PP_ALIGN.CENTER
+    if p.runs:
+        p.runs[0].font.size = Pt(14)
+        p.runs[0].font.bold = True
+
+
 def replace_picture_fit(
     slide,
     shape_name: str,
