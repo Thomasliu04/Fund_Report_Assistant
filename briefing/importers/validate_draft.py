@@ -169,11 +169,18 @@ def _check_industry(report: ValidationReport, ws) -> None:
     sheet = ws.title
     headers = _header_row(ws)
     dates = [h for _, h in headers if re.match(r"^\d{8}", h)]
-    if len(dates) < 3:
+    if len(dates) < 2:
         report.add(
             "error",
             "industry_dates",
-            f"第1行需含 3 个 YYYYMMDD 日期列（期末→上季末→年初），当前识别到 {dates or '无'}",
+            f"第1行需含至少 2 个 YYYYMMDD 日期列（期末[+上季末]+年初；Q1 可仅期末+年初），当前识别到 {dates or '无'}",
+            sheet,
+        )
+    elif len(dates) == 2:
+        report.add(
+            "info",
+            "industry_dates_q1",
+            f"日期列（Q1 双列口径）：{' → '.join(dates)}（期末→年初；上季末按年初处理）",
             sheet,
         )
     elif len(dates) > 3:

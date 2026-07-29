@@ -173,6 +173,25 @@ def _is_pct_header(h: str) -> bool:
     return "增速" in h or "增幅" in h
 
 
+def _is_ytd_window_label(h: str) -> bool:
+    """前三季度 / 前两季度 / 全年 / H1 等属 YTD 窗口，不是单季。"""
+    return any(
+        t in h
+        for t in ("前三季度", "前两季度", "前四季度", "全年", "上半年", "下半年", "YTD", "H1", "H2")
+    ) or (h.endswith("年") and "季度" not in h)
+
+
+def _is_single_quarter_label(h: str) -> bool:
+    """单季列：季度* / Q3*；排除「前三季度」。"""
+    if _is_ytd_window_label(h):
+        return False
+    if "季度" in h:
+        return True
+    if re.match(r"^Q\d", h):
+        return True
+    return False
+
+
 def _pick_col(headers: list[str], *predicates) -> int | None:
     """返回满足任一谓词的列下标；谓词为 (norm_header) -> bool。"""
     for i, h in enumerate(headers):
@@ -237,32 +256,55 @@ def _map_role_indices(headers: list[str], sheet_id: str) -> dict[str, int | None
 
     ytd_inc = _pick_col(
         h,
-        lambda x: ("增量" in x and "季度" not in x and "Q" not in x[:2] and "规模增量" not in x)
+        lambda x: (
+            "增量" in x
+            and "排名" not in x
+            and not _is_single_quarter_label(x)
+            and "规模增量" not in x
+            and (
+                _is_ytd_window_label(x)
+                or "非货增量" in x
+                or x in {"规模增量", "YTD非货增量", "26H1增量", "YTD增量"}
+                or x.endswith("年增量")
+            )
+        ),
+        # 业务表裸「规模增量」；行业/总规模等非增量表可用更宽匹配
+        lambda x: (
+            sheet_id != "increment"
+            and "增量" in x
+            and "排名" not in x
+            and not _is_single_quarter_label(x)
+            and "规模增量" not in x
+        )
         or x in {"规模增量", "YTD非货增量", "26H1增量", "YTD增量"},
-        lambda x: "增量" in x and "排名" not in x and "季度" not in x and not re.match(r"^Q\d", x),
     )
     # Prefer explicit 规模增量 for business
     bi = _col_by_equals(h, "规模增量")
     if bi is not None:
         ytd_inc = bi
-    yi2 = _col_contains(h, "非货增量", exclude=("排名",))
+    yi2 = None
+    for i, x in enumerate(h):
+        if "非货增量" in x and "排名" not in x and not _is_single_quarter_label(x):
+            yi2 = i
+            break
     if sheet_id == "increment" and yi2 is not None:
         ytd_inc = yi2
 
-    ytd_g = _pick_col(h, lambda x: _is_pct_header(x) and "季度" not in x and not re.match(r"^Q\d", x))
+    ytd_g = _pick_col(
+        h,
+        lambda x: _is_pct_header(x) and not _is_single_quarter_label(x),
+    )
     q_inc = _pick_col(
         h,
-        lambda x: ("季度" in x and "增量" in x and "排名" not in x)
-        or re.match(r"^Q\d增量$", x)
-        or x.startswith("Q") and "增量" in x and "排名" not in x,
+        lambda x: _is_single_quarter_label(x) and "增量" in x and "排名" not in x,
     )
     q_g = _pick_col(
         h,
-        lambda x: ("季度" in x and _is_pct_header(x)) or (re.match(r"^Q\d", x) and _is_pct_header(x)),
+        lambda x: _is_single_quarter_label(x) and _is_pct_header(x),
     )
     rc_y = _pick_col(
         h,
-        lambda x: "排名变化" in x and "季度" not in x and not x.startswith("Q"),
+        lambda x: "排名变化" in x and not _is_single_quarter_label(x),
         lambda x: x in {"排名变化", "YTD排名变化"},
     )
     # Prefer YTD 排名变化 when both exist
@@ -276,8 +318,7 @@ def _map_role_indices(headers: list[str], sheet_id: str) -> dict[str, int | None
 
     rc_q = _pick_col(
         h,
-        lambda x: "季度" in x and "排名变化" in x,
-        lambda x: x.startswith("Q") and "排名变化" in x,
+        lambda x: _is_single_quarter_label(x) and "排名变化" in x,
     )
     new_i = _col_by_equals(h, "新发") or _col_contains(h, "新发")
     nav_i = _pick_col(h, lambda x: "净值" in x)

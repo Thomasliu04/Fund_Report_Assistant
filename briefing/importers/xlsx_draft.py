@@ -108,16 +108,23 @@ def _norm_company(name: str) -> str:
 
 
 def _detect_dates_from_industry(raw: pd.DataFrame) -> tuple[str, str, str]:
-    """从行业变化表头识别 期末/上季/年初。"""
+    """从行业变化表头识别 期末/上季/年初。
+
+    - 常规：3 列 YYYYMMDD（期末→上季末→年初）
+    - Q1：可仅 2 列（期末→年初）；上季末回退为年初
+    """
     header = [_norm_header(x) for x in raw.iloc[0].tolist()]
     dates = []
     for h in header:
         m = re.match(r"^(\d{8})", h)
         if m:
             dates.append(m.group(1))
-    if len(dates) < 3:
-        raise ValueError(f"行业变化表头未能识别三个日期列: {header[:6]}")
-    return dates[0], dates[1], dates[2]  # current, prev_q, year_start
+    if len(dates) >= 3:
+        return dates[0], dates[1], dates[2]
+    if len(dates) == 2:
+        # Q1：期末 + 年初
+        return dates[0], dates[1], dates[1]
+    raise ValueError(f"行业变化表头需至少 2 个 YYYYMMDD 日期列（期末[+上季末]+年初）: {header[:6]}")
 
 
 def _parse_industry(path: Path, sheet: str, current: str, prev_q: str, year_start: str) -> list[dict]:

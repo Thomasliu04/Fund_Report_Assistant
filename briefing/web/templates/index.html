@@ -19,7 +19,14 @@
         <p class="brand-sub">Briefing Desk · 底稿 → 全册 PPT</p>
       </div>
     </div>
-    <p class="top-hint">三步：上传底稿 · 确认期别 · 生成 PPT（文字）+ Excel（表图）</p>
+    <div class="top-right">
+      <nav class="doc-links" aria-label="文档">
+        <button type="button" class="btn ghost doc-btn" data-doc="guide">出报指引</button>
+        <button type="button" class="btn ghost doc-btn" data-doc="maintain">需求与维护</button>
+        <button type="button" class="btn ghost doc-btn" data-doc="readme">README</button>
+      </nav>
+      <p class="top-hint">三步：上传底稿 · 确认期别 · 生成 PPT（文字）+ Excel（表图）</p>
+    </div>
   </header>
 
   <main class="flow">
@@ -100,7 +107,7 @@
         <h3>关键核对</h3>
         <p class="preview-industry" id="preview-industry"></p>
         <ul id="preview-list"></ul>
-        <p class="preview-note">PPT 只灌文字（表图占位已清空）。请按 Excel「使用说明」或 <code>出报指引.md</code> 的「终表 → PPT 粘贴清单」粘贴；第 6 页左=非货ETF含联接、右=权益ETF含联接，勿贴「不含联接」旧表。</p>
+        <p class="preview-note">PPT 只灌文字（表图占位已清空）。请点右上角「出报指引」查看粘贴清单；第 6 页左=非货ETF含联接、右=权益ETF含联接，勿贴「不含联接」旧表。</p>
       </div>
     </section>
 
@@ -119,6 +126,20 @@
     <span>本地操作 · 数据不离开本机</span>
     <span>命令行：<code>python main.py serve</code></span>
   </footer>
+
+  <div class="drawer-backdrop" id="drawer-backdrop" hidden></div>
+  <aside class="drawer" id="doc-drawer" hidden aria-hidden="true">
+    <div class="drawer-head">
+      <div>
+        <p class="drawer-kicker" id="drawer-kicker">文档</p>
+        <h2 id="drawer-title">出报指引</h2>
+      </div>
+      <button type="button" class="drawer-close" id="drawer-close" aria-label="关闭">×</button>
+    </div>
+    <div class="drawer-body md-body" id="drawer-body">
+      <p class="muted">加载中…</p>
+    </div>
+  </aside>
 
   <script src="/static/app.js"></script>
 </body>

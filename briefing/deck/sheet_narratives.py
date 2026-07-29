@@ -14,7 +14,8 @@ from briefing.deck.table_facts import (
     load_table_book_from_xlsx,
     require_focus,
 )
-from briefing.models import PeriodType, ReportConfig
+from briefing.models import ReportConfig
+from briefing.period_profile import PeriodMode, PeriodProfile, resolve_period_profile
 
 PAGE_INSUFFICIENT = "【本页数据不足，请人工补充】"
 
@@ -52,45 +53,62 @@ def _rank_change_text(change: int | None, *, unit: str = "名") -> str:
     return "不变" if unit == "名" else "持平"
 
 
+def _profile(config: ReportConfig) -> PeriodProfile:
+    """优先尊重 yaml/网页写入的 column_labels，再补全 mode/lead/span。"""
+    base = resolve_period_profile(
+        config.period_label,
+        config.period_type.value if hasattr(config.period_type, "value") else str(config.period_type),
+        config.current_date,
+    )
+    ytd = (config.ytd_column_label or "").strip() or base.ytd_tag
+    q = (config.quarter_column_label or "").strip() or base.quarter_tag
+    if ytd == base.ytd_tag and q == base.quarter_tag:
+        return base
+    # 标签被手改时仍保留 mode/lead，只覆盖展示标签
+    return PeriodProfile(
+        mode=base.mode,
+        period_type=base.period_type,
+        period_label=base.period_label,
+        ytd_tag=ytd,
+        quarter_tag=q,
+        span=base.span,
+        ytd_phrase=ytd if base.mode != PeriodMode.PERIOD_LEAD or "年" in ytd or "H" in ytd.upper() else base.ytd_phrase,
+        dual_metrics=base.dual_metrics,
+        lead=base.lead,
+    )
+
+
 def _period_span(config: ReportConfig) -> str:
-    """按期别标签推断口语（优先 label 中的 H1/H2，避免网页误选 quarter）。"""
-    lab = (config.period_label or "").upper()
-    if "H1" in lab:
-        return "上半年"
-    if "H2" in lab:
-        return "下半年"
-    if config.period_type == PeriodType.HALF_YEAR:
-        # 无 H 标签时，按期末月份兜底
-        try:
-            mm = int(config.current_date[4:6])
-            if mm <= 6:
-                return "上半年"
-            return "下半年"
-        except (TypeError, ValueError, IndexError):
-            return "上半年"
-    return "全年"
+    return _profile(config).span
 
 
 def _growth_intro(config: ReportConfig) -> str:
     y = config.current_date[2:4]
-    span = _period_span(config)
-    if span in {"上半年", "下半年"}:
-        return f"{y}年{span}规模增速较快的品类："
-    return f"{y}年规模增速较快的品类："
+    p = _profile(config)
+    if p.mode == PeriodMode.SINGLE_QUARTER:
+        return f"{y}年{p.quarter_tag}增速为正的品类："
+    if p.mode == PeriodMode.QUARTER_LEAD:
+        return f"{y}年{p.ytd_phrase}规模增速较快的品类（以{p.quarter_tag}为主）："
+    if p.span in {"上半年", "下半年"}:
+        return f"{y}年{p.span}规模增速较快的品类："
+    if p.span == "全年" or (p.ytd_tag.endswith("年") and "H" not in p.ytd_tag.upper()):
+        return f"{y}年规模增速较快的品类："
+    return f"{y}年{p.span}规模增速较快的品类："
 
 
 def _ytd_phrase(config: ReportConfig) -> str:
-    """增速/增量前的期别用语：优先 period_label（26H1），避免误写成「26年全年」。"""
-    lab = (config.period_label or "").strip()
-    if lab and ("H1" in lab.upper() or "H2" in lab.upper()):
-        return lab
-    tag = (config.ytd_tag() or "").strip()
-    span = _period_span(config)
-    if tag and ("H1" in tag.upper() or "H2" in tag.upper()):
-        return tag
-    if span in {"上半年", "下半年"}:
-        return span
-    return tag or span
+    """增速/增量前的期别用语。"""
+    return _profile(config).ytd_phrase
+
+
+def _growth_label(config: ReportConfig) -> str:
+    """开篇「行业增速」前的口径词：Q1 用季度增速，其余可空（直接写增速）。"""
+    p = _profile(config)
+    if p.mode == PeriodMode.SINGLE_QUARTER:
+        return "季度"
+    if p.mode == PeriodMode.QUARTER_LEAD:
+        return "YTD"
+    return ""
 
 
 def _short_co(name: str) -> str:
@@ -149,14 +167,16 @@ def _build_overview(book: TableBook, config: ReportConfig) -> dict:
 
     y, m, d = config.current_date[2:4], int(config.current_date[4:6]), int(config.current_date[6:8])
     opening = PAGE_INSUFFICIENT
+    g_lab = _growth_label(config)
+    g_prefix = f"{g_lab}增速" if g_lab else "增速"
     if total and non_money and total.aum is not None and non_money.aum is not None:
         ft = _fmt_pct(focus_t.growth_pct) if focus_t and focus_t.growth_pct is not None else "—"
         fn = _fmt_pct(focus_n.growth_pct) if focus_n and focus_n.growth_pct is not None else "—"
         opening = (
             f"截至{y}年{m}月{d}日，公募行业总规模{_fmt_wan_yi(total.aum)}万亿"
-            f"（行业增速{_fmt_pct(total.growth_pct)}% vs {short}增速{ft}%），"
+            f"（行业{g_prefix}{_fmt_pct(total.growth_pct)}% vs {short}{g_prefix}{ft}%），"
             f"非货{_fmt_wan_yi(non_money.aum)}万亿"
-            f"（行业增速{_fmt_pct(non_money.growth_pct)}% vs {short}增速{fn}%）。"
+            f"（行业{g_prefix}{_fmt_pct(non_money.growth_pct)}% vs {short}{g_prefix}{fn}%）。"
         )
         if focus_t is None and total_sh:
             require_focus(book, "total", config.focus_company, short)
@@ -273,7 +293,8 @@ def _build_total(book: TableBook, config: ReportConfig) -> dict:
     qg_rank = sorted(top, key=lambda x: x.q_growth_pct or -999, reverse=True)
     g_pos = next((i for i, r in enumerate(g_rank, 1) if r.name == focus.name), None)
     qg_pos = next((i for i, r in enumerate(qg_rank, 1) if r.name == focus.name), None)
-    span = _period_span(config)
+    p = _profile(config)
+    span = p.span
     q_line = (
         f"{config.quarter_tag()}单季度增速达{_fmt_pct(focus.q_growth_pct)}%，"
         f"在Top{config.top_n}公司中位列第{qg_pos}名"
@@ -283,10 +304,27 @@ def _build_total(book: TableBook, config: ReportConfig) -> dict:
     if qg_pos == 2 and qg_rank and qg_rank[0].name != focus.name:
         leader = qg_rank[0]
         q_line += f"，仅次于{_short_co(leader.name)}（{_fmt_pct(leader.q_growth_pct)}%）"
-    focus_growth = (
-        f"{config.focus_company_short}总规模{span}增速为{_fmt_pct(focus.growth_pct)}%，"
-        f"在Top{config.top_n}公司中位列第{g_pos}；{q_line}。"
-    )
+
+    if not p.dual_metrics:
+        # Q1：只报单季（YTD≡季度）
+        focus_growth = (
+            f"{config.focus_company_short}总规模{config.quarter_tag()}增速为{_fmt_pct(focus.growth_pct)}%，"
+            f"在Top{config.top_n}公司中位列第{g_pos}。"
+        )
+    elif p.lead == "quarter":
+        # Q3：单季为主，再补 YTD/前三季度
+        ytd_line = (
+            f"{_ytd_phrase(config)}增速为{_fmt_pct(focus.growth_pct)}%，"
+            f"在Top{config.top_n}公司中位列第{g_pos}"
+        )
+        focus_growth = (
+            f"{config.focus_company_short}总规模{q_line}；{ytd_line}。"
+        )
+    else:
+        focus_growth = (
+            f"{config.focus_company_short}总规模{span}增速为{_fmt_pct(focus.growth_pct)}%，"
+            f"在Top{config.top_n}公司中位列第{g_pos}；{q_line}。"
+        )
     return {
         "section_title": title,
         "peer_moves": peer,
@@ -330,13 +368,29 @@ def _build_non_money(book: TableBook, config: ReportConfig) -> dict:
     )
     vs_y = "高于" if (focus.growth_pct or 0) >= avg_g else "低于"
     vs_q = "高于" if (focus.q_growth_pct or 0) >= avg_qg else "低于"
-    p2 = (
-        f"{short}非货{_ytd_phrase(config)}增长{_fmt_yi(focus.increment)}亿，"
-        f"增速{_fmt_pct(focus.growth_pct)}%，"
-        f"{vs_y}Top{config.top_n}公司（{_fmt_pct(avg_g)}%）；"
-        f"{config.quarter_tag()}增量{_fmt_yi(focus.q_increment)}亿，增速{_fmt_pct(focus.q_growth_pct)}%，"
-        f"{vs_q}Top{config.top_n}公司（{_fmt_pct(avg_qg)}%）。"
-    )
+    p = _profile(config)
+    short_ytd = _ytd_phrase(config)
+    if not p.dual_metrics:
+        p2 = (
+            f"{short}非货{config.quarter_tag()}增长{_fmt_yi(focus.increment)}亿，"
+            f"增速{_fmt_pct(focus.growth_pct)}%，"
+            f"{vs_y}Top{config.top_n}公司（{_fmt_pct(avg_g)}%）。"
+        )
+    elif p.lead == "quarter":
+        p2 = (
+            f"{short}非货{config.quarter_tag()}增量{_fmt_yi(focus.q_increment)}亿，增速{_fmt_pct(focus.q_growth_pct)}%，"
+            f"{vs_q}Top{config.top_n}公司（{_fmt_pct(avg_qg)}%）；"
+            f"{short_ytd}增长{_fmt_yi(focus.increment)}亿，增速{_fmt_pct(focus.growth_pct)}%，"
+            f"{vs_y}Top{config.top_n}公司（{_fmt_pct(avg_g)}%）。"
+        )
+    else:
+        p2 = (
+            f"{short}非货{short_ytd}增长{_fmt_yi(focus.increment)}亿，"
+            f"增速{_fmt_pct(focus.growth_pct)}%，"
+            f"{vs_y}Top{config.top_n}公司（{_fmt_pct(avg_g)}%）；"
+            f"{config.quarter_tag()}增量{_fmt_yi(focus.q_increment)}亿，增速{_fmt_pct(focus.q_growth_pct)}%，"
+            f"{vs_q}Top{config.top_n}公司（{_fmt_pct(avg_qg)}%）。"
+        )
     return {"section_title": title, "p1": p1, "p2": p2, "p3": "", "footnote_passive": foot}
 
 
@@ -354,12 +408,24 @@ def _build_increment(book: TableBook, config: ReportConfig) -> dict:
 
     short = config.focus_company_short
     inc_rank = focus.increment_rank or focus.rank
-    # Q 增量排名：优先用增量表自身；否则用非货表 Q2增量排序
     q_rank = None
     q_inc = focus.q_increment
-    if nm:
-        focus_nm = find_focus(nm.rows, config.focus_company, short)
-        if focus_nm and focus_nm.q_increment is not None:
+    ytd_inc = focus.increment
+    ytd_rank = inc_rank
+    focus_nm = find_focus(nm.rows, config.focus_company, short) if nm else None
+    if focus_nm:
+        if ytd_inc is None and focus_nm.increment is not None:
+            ytd_inc = focus_nm.increment
+            ordered_y = sorted(
+                [r for r in nm.rows if r.increment is not None],
+                key=lambda r: r.increment or 0,
+                reverse=True,
+            )
+            ytd_rank = next(
+                (i for i, r in enumerate(ordered_y, 1) if r.name == focus_nm.name),
+                inc_rank,
+            )
+        if focus_nm.q_increment is not None:
             q_inc = focus_nm.q_increment
             ordered = sorted(
                 [r for r in nm.rows if r.q_increment is not None],
@@ -367,19 +433,49 @@ def _build_increment(book: TableBook, config: ReportConfig) -> dict:
                 reverse=True,
             )
             q_rank = next((i for i, r in enumerate(ordered, 1) if r.name == focus_nm.name), None)
+    if q_rank is None and focus.q_increment is not None:
+        ordered_q = sorted(
+            [r for r in sh.rows if r.q_increment is not None],
+            key=lambda r: r.q_increment or 0,
+            reverse=True,
+        )
+        q_rank = next((i for i, r in enumerate(ordered_q, 1) if r.name == focus.name), None)
+        if focus.increment_rank:
+            # 增量表只有季度列时，表内「增量排名」即单季排名
+            pass
 
     q_tag = config.quarter_tag()
-    span = _period_span(config)
-    if q_rank and q_inc is not None:
+    p = _profile(config)
+    span = p.span
+    ytd_p = _ytd_phrase(config)
+    # 增量表仅季度列：用表内排名当 q_rank
+    if q_rank is None and focus.increment_rank and focus.q_increment is not None and focus.increment is None:
+        q_rank = focus.increment_rank
+
+    if not p.dual_metrics:
+        # Q1：YTD≡单季；全行业名次必须用增量表「非货增量排名」列（如第132），
+        # 不可用非货 Top 表内按增量重排的位次。
+        use_inc = focus.increment if focus.increment is not None else q_inc
+        use_rank = focus.increment_rank or inc_rank
         p1 = (
-            f"{short}{_ytd_phrase(config)}非货增量为{_fmt_yi(focus.increment)}亿，"
-            f"在全行业排名第{inc_rank}名；"
+            f"{short}{q_tag}非货增量为{_fmt_yi(use_inc)}亿，"
+            f"在全行业排名第{use_rank}名。"
+        )
+    elif p.lead == "quarter" and q_rank and q_inc is not None:
+        p1 = (
+            f"{short}{q_tag}非货增量为{_fmt_yi(q_inc)}亿，在全行业排名第{q_rank}名；"
+            f"{ytd_p}非货增量为{_fmt_yi(ytd_inc)}亿，在全行业排名第{ytd_rank}名。"
+        )
+    elif q_rank and q_inc is not None:
+        p1 = (
+            f"{short}{ytd_p}非货增量为{_fmt_yi(ytd_inc if ytd_inc is not None else focus.increment)}亿，"
+            f"在全行业排名第{ytd_rank}名；"
             f"{q_tag}，非货增量为{_fmt_yi(q_inc)}亿，在全行业排名第{q_rank}名。"
         )
     else:
         p1 = (
-            f"{short}{_ytd_phrase(config)}非货增量为{_fmt_yi(focus.increment)}亿，"
-            f"在全行业排名第{inc_rank}名。"
+            f"{short}{ytd_p}非货增量为{_fmt_yi(ytd_inc if ytd_inc is not None else focus.increment)}亿，"
+            f"在全行业排名第{ytd_rank}名。"
         )
 
     cat_names = {
@@ -400,7 +496,7 @@ def _build_increment(book: TableBook, config: ReportConfig) -> dict:
             ranks = f"第{ranked[0][1]}名、第{ranked[1][1]}名和第{ranked[2][1]}名"
         else:
             ranks = "、".join(f"第{v}名" for _, v in ranked)
-        p2 = f"{names}的{span}增量排名靠前，分别为{ranks}。"
+        p2 = f"{names}的{(p.quarter_tag if p.lead == 'quarter' else span)}增量排名靠前，分别为{ranks}。"
 
     return {"section_title": title, "p1": p1, "p2": p2, "p3": "", "footnote_passive": foot}
 
@@ -563,7 +659,7 @@ def _build_fi(book: TableBook, config: ReportConfig) -> dict:
         ye = config.year_end_ref()
         hold = focus.holding_sales or 0
         pq_q = config.quarter_tag()
-        # 上一季口语：prev_quarter_ref
+        p = _profile(config)
         p2 = (
             f"{config.focus_company_short}固收{_ytd_phrase(config)}规模增量{_fmt_yi(focus.increment)}亿，"
             f"增速{_fmt_pct(focus.growth_pct)}%，持营增量{_fmt_yi(hold)}亿；"
@@ -571,16 +667,28 @@ def _build_fi(book: TableBook, config: ReportConfig) -> dict:
             f"{_rank_change_text(focus.rank_change)}，"
             f"较{config.prev_quarter_ref()}{_rank_change_text(focus.rank_change_q)}。"
         )
-        qi = sorted(top, key=lambda r: r.q_increment or -1e18, reverse=True)
-        qg = sorted(top, key=lambda r: r.q_growth_pct or -1e18, reverse=True)
-        qi_pos = next((i for i, r in enumerate(qi, 1) if r.name == focus.name), None)
-        qg_pos = next((i for i, r in enumerate(qg, 1) if r.name == focus.name), None)
-        if qi_pos and qg_pos:
-            p3 = (
-                f"就{pq_q}而言，{config.focus_company_short}固收的规模增量达{_fmt_yi(focus.q_increment)}亿，"
-                f"在固收Top{config.top_n}公司位列第{qi_pos}；"
-                f"增速{_fmt_pct(focus.q_growth_pct)}%，在固收Top{config.top_n}公司位列第{qg_pos}。"
-            )
+        if not p.dual_metrics:
+            # Q1：p2 已含单季增量，不再另起「就Qx而言」
+            p3 = ""
+        else:
+            qi = sorted(top, key=lambda r: r.q_increment or -1e18, reverse=True)
+            qg = sorted(top, key=lambda r: r.q_growth_pct or -1e18, reverse=True)
+            qi_pos = next((i for i, r in enumerate(qi, 1) if r.name == focus.name), None)
+            qg_pos = next((i for i, r in enumerate(qg, 1) if r.name == focus.name), None)
+            if qi_pos and qg_pos:
+                if p.lead == "quarter":
+                    p3 = (
+                        f"就{pq_q}而言，{config.focus_company_short}固收的规模增量达{_fmt_yi(focus.q_increment)}亿，"
+                        f"在固收Top{config.top_n}公司位列第{qi_pos}；"
+                        f"增速{_fmt_pct(focus.q_growth_pct)}%，在固收Top{config.top_n}公司位列第{qg_pos}。"
+                        f"（{_ytd_phrase(config)}增量{_fmt_yi(focus.increment)}亿。）"
+                    )
+                else:
+                    p3 = (
+                        f"就{pq_q}而言，{config.focus_company_short}固收的规模增量达{_fmt_yi(focus.q_increment)}亿，"
+                        f"在固收Top{config.top_n}公司位列第{qi_pos}；"
+                        f"增速{_fmt_pct(focus.q_growth_pct)}%，在固收Top{config.top_n}公司位列第{qg_pos}。"
+                    )
     return {
         "title": "4. 固收排名情况",
         "label_line": "固收：",

@@ -118,7 +118,9 @@ def _header_aliases(h: Any, *, ytd_tag: str, q_tag: str) -> Any:
 
 
 def _detect_ytd_q_tags(ws_industry) -> tuple[str, str]:
-    """从行业表日期列推断 ytd/quarter 口语前缀。"""
+    """从行业表日期列推断 ytd/quarter 口语前缀（与 PeriodProfile 对齐）。"""
+    from briefing.period_profile import resolve_period_profile
+
     dates: list[str] = []
     for c in range(1, min(8, (ws_industry.max_column or 1) + 1)):
         h = _norm(ws_industry.cell(1, c).value)
@@ -128,15 +130,8 @@ def _detect_ytd_q_tags(ws_industry) -> tuple[str, str]:
     if len(dates) < 1:
         return "YTD", "季度"
     cur = dates[0]
-    yy, mm = cur[2:4], int(cur[4:6])
-    q_tag = f"Q{(mm - 1) // 3 + 1}"
-    if mm in (6,):
-        ytd_tag = f"{yy}H1"
-    elif mm == 12:
-        ytd_tag = f"{yy}年"
-    else:
-        ytd_tag = f"{yy}年"
-    return ytd_tag, q_tag
+    profile = resolve_period_profile("", "", cur)
+    return profile.ytd_tag, profile.quarter_tag
 
 
 def _copy_top_n_block(

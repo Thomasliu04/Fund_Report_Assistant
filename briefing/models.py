@@ -31,18 +31,25 @@ class ReportConfig:
     ytd_column_label: str = ""
     quarter_column_label: str = ""
 
+    def period_profile(self):
+        """统一期别档案（Q1 单口径 / Q3 单季主导 / H1·Q4 期别主导）。"""
+        from briefing.period_profile import resolve_period_profile
+
+        return resolve_period_profile(
+            self.period_label,
+            self.period_type.value if isinstance(self.period_type, PeriodType) else str(self.period_type),
+            self.current_date,
+        )
+
     def ytd_tag(self) -> str:
         if self.ytd_column_label:
             return self.ytd_column_label
-        if self.period_type == PeriodType.HALF_YEAR:
-            return self.period_label
-        return f"{self.current_date[2:4]}年"
+        return self.period_profile().ytd_tag
 
     def quarter_tag(self) -> str:
         if self.quarter_column_label:
             return self.quarter_column_label
-        month = int(self.current_date[4:6])
-        return f"Q{(month - 1) // 3 + 1}"
+        return self.period_profile().quarter_tag
 
     def year_end_ref(self) -> str:
         """相对年初口径的口语参照，如 24年底。"""

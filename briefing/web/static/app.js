@@ -218,4 +218,58 @@
   }
 
   refreshRecent();
+
+  // —— 文档侧栏拉窗（出报指引 / README）——
+  const drawer = $("doc-drawer");
+  const backdrop = $("drawer-backdrop");
+  const drawerTitle = $("drawer-title");
+  const drawerKicker = $("drawer-kicker");
+  const drawerBody = $("drawer-body");
+  const drawerClose = $("drawer-close");
+  const docCache = {};
+
+  function closeDrawer() {
+    drawer.classList.remove("is-open");
+    backdrop.classList.remove("is-open");
+    setTimeout(() => {
+      drawer.hidden = true;
+      backdrop.hidden = true;
+      drawer.setAttribute("aria-hidden", "true");
+    }, 220);
+  }
+
+  async function openDoc(docId) {
+    drawer.hidden = false;
+    backdrop.hidden = false;
+    drawer.setAttribute("aria-hidden", "false");
+    requestAnimationFrame(() => {
+      drawer.classList.add("is-open");
+      backdrop.classList.add("is-open");
+    });
+    drawerBody.innerHTML = `<p class="muted">加载中…</p>`;
+    try {
+      if (!docCache[docId]) {
+        const res = await fetch(`/api/docs/${encodeURIComponent(docId)}`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || "文档加载失败");
+        docCache[docId] = data;
+      }
+      const data = docCache[docId];
+      drawerTitle.textContent = data.title || docId;
+      drawerKicker.textContent = data.filename || "文档";
+      drawerBody.innerHTML = data.html || "<p class='muted'>空文档</p>";
+      drawerBody.scrollTop = 0;
+    } catch (err) {
+      drawerBody.innerHTML = `<p class="status error" style="white-space:pre-wrap">${escapeHtml(String(err.message || err))}</p>`;
+    }
+  }
+
+  document.querySelectorAll(".doc-btn").forEach((btn) => {
+    btn.addEventListener("click", () => openDoc(btn.dataset.doc));
+  });
+  drawerClose.addEventListener("click", closeDrawer);
+  backdrop.addEventListener("click", closeDrawer);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !drawer.hidden) closeDrawer();
+  });
 })();

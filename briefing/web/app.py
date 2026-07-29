@@ -65,26 +65,20 @@ def _safe_job_id(job_id: str) -> str:
 
 
 def _normalize_period(period_label: str, period_type: str, current: str) -> tuple[str, str, str]:
-    """返回 (period_type, ytd_tag, quarter_tag)。H1/H2 标签强制 half_year。"""
-    label = (period_label or "").strip()
-    lab_u = label.upper()
-    yy = current[2:4] if len(current) >= 4 else "25"
-    month = int(current[4:6]) if len(current) >= 6 else 12
-    q_tag = f"Q{(month - 1) // 3 + 1}"
-    if "H1" in lab_u or "H2" in lab_u:
-        return "half_year", label or f"{yy}H1", q_tag
-    if period_type == "half_year":
-        return "half_year", label or f"{yy}H1", q_tag
-    return "quarter", label if label and "Q" in lab_u else f"{yy}年", q_tag
+    """返回 (period_type, ytd_tag, quarter_tag)，走 PeriodProfile。"""
+    from briefing.period_profile import resolve_period_profile
+
+    profile = resolve_period_profile(period_label, period_type, current)
+    return profile.period_type, profile.ytd_tag, profile.quarter_tag
 
 
 def _write_config(path: Path, req: GenerateRequest) -> None:
+    from briefing.period_profile import resolve_period_profile
+
     raw = yaml.safe_load(REPORT_TEMPLATE.read_text(encoding="utf-8"))
-    period_type, ytd_tag, q_tag = _normalize_period(
-        req.period_label, req.period_type, req.current
-    )
-    raw["report"]["period_label"] = req.period_label
-    raw["report"]["period_type"] = period_type
+    profile = resolve_period_profile(req.period_label, req.period_type, req.current)
+    raw["report"]["period_label"] = req.period_label.strip() or profile.period_label
+    raw["report"]["period_type"] = profile.period_type
     raw["dates"] = {
         "current": req.current,
         "previous_quarter": req.previous_quarter,
@@ -92,7 +86,7 @@ def _write_config(path: Path, req: GenerateRequest) -> None:
     }
     raw["focus_company"] = req.focus_company
     raw["focus_company_short"] = req.focus_company_short
-    raw["column_labels"] = {"ytd": ytd_tag, "quarter": q_tag}
+    raw["column_labels"] = {"ytd": profile.ytd_tag, "quarter": profile.quarter_tag}
     path.write_text(
         yaml.safe_dump(raw, allow_unicode=True, sort_keys=False),
         encoding="utf-8",
@@ -210,6 +204,37 @@ def index() -> HTMLResponse:
     return HTMLResponse(html)
 
 
+_DOC_FILES = {
+    "guide": ("出报指引", ROOT / "出报指引.md"),
+    "readme": ("README", ROOT / "README.md"),
+    "maintain": ("需求与维护说明", ROOT / "docs" / "需求与维护说明.md"),
+}
+
+
+def _render_markdown(path: Path) -> str:
+    import mistune
+
+    text = path.read_text(encoding="utf-8")
+    md = mistune.create_markdown(plugins=["table", "strikethrough", "url"])
+    return md(text)
+
+
+@app.get("/api/docs/{doc_id}")
+def get_doc(doc_id: str) -> dict:
+    """返回出报指引 / README 的 HTML，供网页侧栏拉窗展示。"""
+    meta = _DOC_FILES.get(doc_id)
+    if not meta:
+        raise HTTPException(404, f"未知文档：{doc_id}（可选：guide / readme / maintain）")
+    title, path = meta
+    if not path.exists():
+        raise HTTPException(404, f"文件不存在：{path.name}")
+    try:
+        html = _render_markdown(path)
+    except Exception as exc:
+        raise HTTPException(500, f"渲染失败：{exc}") from exc
+    return {"id": doc_id, "title": title, "filename": path.name, "html": html}
+
+
 @app.get("/api/health")
 def health() -> dict:
     return {"ok": True, "root": str(ROOT)}
@@ -273,22 +298,20 @@ async def upload_draft(file: UploadFile = File(...)) -> dict:
             period_guess = token
             break
     if not period_guess:
+        from briefing.period_profile import guess_period_from_date
+
         cur = dates.get("current", "")
         if len(cur) >= 6 and cur.isdigit():
-            yy, mm = cur[2:4], int(cur[4:6])
-            if mm in (1, 2, 3):
-                period_guess, period_type = f"{yy}Q1", "quarter"
-            elif mm in (4, 5, 6):
-                period_guess, period_type = f"{yy}H1", "half_year"
-            elif mm in (7, 8, 9):
-                period_guess, period_type = f"{yy}Q3", "quarter"
-            else:
-                # 12 月：默认按季度简报 Q4（与现网案例一致）
-                period_guess, period_type = f"{yy}Q4", "quarter"
+            period_guess, period_type = guess_period_from_date(cur)
         else:
             period_guess, period_type = "25H1", "half_year"
     else:
-        period_type = "half_year" if "H" in period_guess else "quarter"
+        from briefing.period_profile import resolve_period_profile
+
+        profile = resolve_period_profile(
+            period_guess, "", dates.get("current", "")
+        )
+        period_type = profile.period_type
 
     return {
         "job_id": job_id,
