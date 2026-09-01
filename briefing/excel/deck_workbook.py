@@ -1,4 +1,4 @@
-"""全册表图 Excel：各页一张 sheet，带数据条/色阶/银华高亮，便于人工调美观。"""
+"""全册表图 Excel：各页一张 sheet，带数据条/色阶/示例高亮，便于人工调美观。"""
 
 from __future__ import annotations
 
@@ -72,7 +72,7 @@ def _add_sheet(
     columns: list[ColumnSpec],
     rows: list[dict],
     *,
-    focus_company: str = "银华基金",
+    focus_company: str = "示例基金",
     focus_key: str = "company",
 ) -> tuple[list[str], list[tuple[str, str]]]:
     """写入 sheet，返回 (双向红条区域, 全部数据条区域含颜色)。"""
@@ -219,7 +219,7 @@ def _readme_sheet(wb: Workbook, period_label: str) -> None:
         "",
         "【分工建议】",
         "· PPT：叙事文字（观点句需人工敲定）+ 贴入表图",
-        "· 本 Excel：各页排名表的可编辑源文件（数据条 / 色阶 / 银华高亮）",
+        "· 本 Excel：各页排名表的可编辑源文件（数据条 / 色阶 / 示例高亮）",
         "",
         "【怎么用】",
         "1. 本文件已按内容自动调整列宽；可再微调列宽/条件格式",
@@ -262,7 +262,7 @@ def build_deck_workbook(
     output_path: str | Path,
     *,
     period_label: str = "",
-    focus_company: str = "银华基金",
+    focus_company: str = "示例基金",
 ) -> Path:
     """
     sheets: [(sheet_title, columns, rows), ...]

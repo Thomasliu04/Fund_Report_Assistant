@@ -1,250 +1,214 @@
-# 季度简报辅助系统 (Briefing Support System)
+# 季度简报辅助系统（Briefing Support System）
 
-根据公募规模数据，自动生成与现有风格一致的 **PPT 简报初稿**（叙事文字 + 带数据条/色阶的排名表），避免数据日当天在 PPT 里手抄数字出错。
+从公募规模 **底稿 Excel（终表）** 自动生成：
 
-## 当前能力
+1. **表图 Excel**（`*_tables.xlsx`）——带数据条 / 色阶 / 示例高亮，**主产物**，人工微调后贴进 PPT  
+2. **PPT 文字初稿**（`*_briefing.pptx`）——数字从终表读出自动成文；表图默认不自动贴
 
-| 能力 | 状态 |
-|------|------|
-| 标准化 CSV → 排名/增量计算 | ✅ |
-| 规则化叙事（银华点评、竞品位次变化） | ✅ 全册 10 页 |
-| Excel 数据表（可打开核对） | ✅ 总规模排名 |
-| PPT 表图（数据条负左正右；排名色阶；银华高亮） | ✅ 全册 |
-| Notebook / Oracle 直连 | ⏳ 通过导出 CSV 对接 |
+原则：**数字以底稿终表为准**，避免数据日手抄与双路径计算导致口径漂移。
 
-**推荐主命令：** `full-deck`（全册 10 页文字 + 表图）。  
-调试第 2 页可用：`excel-loop`。
+---
 
-> **新一期怎么用：** 见根目录 [出报指引.md](出报指引.md)。  
-> **推荐：** `python main.py serve --open`（上传底稿 → 生成 **PPT 文字稿 + Excel 表图**）。
+## 文档入口（接手先看这里）
 
+| 文档 | 给谁看 | 内容 |
+|------|--------|------|
+| **[出报指引.md](出报指引.md)** | 出报操作员 | 日常流程、底稿规范、粘贴清单、验收勾选 |
+| **[docs/需求与维护说明.md](docs/需求与维护说明.md)** | 开发 / 维护 | 需求背景、模块职责、改哪里、故障排查 |
+| 本文 README | 所有人 | 安装、快速开始、目录结构、命令一览 |
 
+网页操作台侧栏也可打开「出报指引 / README」。
 
+---
 
-## 环境安装
+## 快速开始
+
+### 1. 安装
 
 ```bash
-cd /Users/thomasliu/PycharmProjects/BriefingSupportSystem
-
-# 建议在业务 conda 环境中安装
-conda activate enhancedindexfundanalysis   # 或你的环境名
+cd /path/to/BriefingSupportSystem
 python -m pip install -r requirements.txt
 ```
 
-依赖主要包括：`pandas`、`openpyxl`、`python-pptx`、`Pillow`、`PyYAML`、`Jinja2`。
+建议 Python 3.10+。依赖见 `requirements.txt`（pandas / openpyxl / python-pptx / FastAPI 等）。
 
-## 新一期数字出来后怎么用
-
-### 1. 准备数据目录
-
-例如 `data/25Q3/`，其中必须有：
-
-```
-data/25Q3/fund_metrics.csv
-```
-
-### 2. 准备配置
-
-复制 `config/report_25h1.yaml` 为新文件（如 `config/report_25q3.yaml`），修改周期与日期：
-
-```yaml
-report:
-  title: "{period_label}公募行业数据简报"
-  period_label: "25Q3"
-  period_type: "quarter"          # quarter | half_year | year
-  data_source_note: "如无特别注明，以下数据口径均未剔除联接，数据来源wind"
-
-dates:
-  current: "20250930"             # 报告期末
-  previous_quarter: "20250630"    # 上季度末
-  year_start: "20241231"          # 年初/上年末
-
-focus_company: "银华基金"
-focus_company_short: "银华"
-
-ranking:
-  top_n: 30
-```
-
-### 3. 生成 PPT（全册 10 页）
+### 2. 推荐用法：网页操作台
 
 ```bash
+python main.py serve --open
+```
+
+浏览器打开后：上传底稿 → 确认期别与日期 → 生成 → 分别下载 Excel / PPT。  
+有校验 **error** 时禁止生成；请先改底稿再重新上传。
+
+### 3. 命令行等价流程
+
+```bash
+# 1) 校验底稿（不改文件）
+python main.py validate-draft --xlsx "/path/to/底稿.xlsx" --strict
+
+# 2) 导出表图 Excel（主产物）
+python main.py export-tables \
+  --xlsx "/path/to/底稿.xlsx" \
+  --output output/26H1_tables.xlsx \
+  --period 26H1 \
+  --focus 示例
+
+# 3) 生成 PPT 文字（从终表读数；默认不贴表）
 python main.py full-deck \
-  --config config/report_25q3.yaml \
-  --data data/25Q3 \
-  --template templates/25H1_template.pptx \
-  --output output/25Q3_briefing.pptx
+  --config config/report_26h1.yaml \
+  --data data/26h1_from_draft \
+  --draft-xlsx "/path/to/底稿.xlsx" \
+  --output output/26H1_briefing.pptx \
+  --strict
 ```
 
-用示例数据试跑：
+成文后按 [出报指引.md](出报指引.md) 的「终表 → PPT 粘贴清单」人工贴表，并审改观点句。
+
+新一期配置：复制 `config/report_template.yaml`（或上期 `report_*.yaml`），改 `period_label` / `dates` / `focus_company`。
+
+---
+
+## 端到端数据流
+
+```text
+底稿.xlsx
+  → validate_draft      # 结构 / 增速刻度检查（error 拦生成）
+  → normalize_draft     # sheet 名、Top30、表头别名（不重算数字）
+  → load_final_tables   # 按列名抽终表
+  → deck_workbook       # → *_tables.xlsx   【主产物】
+  → table_facts + sheet_narratives
+  → pptx_filler         # → *_briefing.pptx 【文字初稿，默认清旧图】
+```
+
+期别叙事自动适配：**Q1**（单季）/ **Q3**（单季主导 + YTD）/ **H1·Q4**（期别主导）。详见维护文档。
+
+默认模版与映射：`templates/25Q4_template.pptx` + `config/slide_map_q4.yaml`。
+
+---
+
+## 目录结构
+
+```text
+BriefingSupportSystem/
+├── main.py                 # 入口：python main.py <command>
+├── requirements.txt
+├── 出报指引.md              # 操作员文档（权威）
+├── README.md               # 本文件
+├── config/
+│   ├── report_template.yaml    # 新一期配置模板
+│   ├── report_*.yaml           # 各期示例配置
+│   ├── slide_map_q4.yaml       # 【主】PPT 槽位映射
+│   └── slide_map.yaml          # 旧 H1 映射（遗留）
+├── templates/
+│   ├── 25Q4_template.pptx      # 【主】统一版式母版
+│   └── 25H1_template.pptx      # 旧母版（遗留）
+├── data/                   # 输入与网页临时任务（见 .gitignore）
+│   └── sample_25h1/        # CSV 示例（遗留路径调试用）
+├── output/                 # 生成结果（gitignore）
+├── docs/
+│   ├── 需求与维护说明.md    # 需求 + 模块维护（权威）
+│   └── 新一期出报指引.md    # 指向根目录出报指引
+└── briefing/               # 业务代码
+    ├── cli.py              # 子命令实现
+    ├── full_deck.py        # 【主】全册编排
+    ├── period_profile.py   # 期别模式（Q1/Q3/H1/Q4）
+    ├── models.py           # ReportConfig 等
+    ├── importers/          # 底稿校验 / 规范化 / xlsx→CSV
+    ├── deck/               # 终表抽取、事实解析、10 页叙事
+    ├── excel/              # tables.xlsx、条件格式、双向数据条
+    ├── render/             # PPT / HTML 灌版
+    ├── web/                # FastAPI 操作台
+    ├── analytics/          # 【遗留】CSV 排名计算
+    ├── narrative/          # 【遗留】CSV 叙事规则
+    ├── pipeline.py         # 【遗留】HTML 生成
+    ├── phase1.py           # 【遗留】早期 1–2 页方案
+    └── excel_ppt_loop.py   # 【遗留】最小闭环调试
+```
+
+**维护时优先改主路径**（`importers` / `deck` / `excel` / `full_deck` / `web`）。标「遗留」的模块仅在无底稿、走 CSV 时回退使用，新需求一般不必动。
+
+改需求速查表见 [docs/需求与维护说明.md](docs/需求与维护说明.md) 第 B.4 节。
+
+---
+
+## 命令一览
+
+| 命令 | 用途 | 日常 |
+|------|------|------|
+| `serve` | 网页操作台（上传→校验→生成→下载） | ✅ 推荐 |
+| `validate-draft` | 检查底稿结构与增速刻度 | ✅ |
+| `export-tables` | 底稿 → 表图 Excel | ✅ |
+| `full-deck` | 终表 → PPT 文字（可选 `--paste-tables`） | ✅ |
+| `import-xlsx` | 底稿 → `fund_metrics.csv`（辅路径） | 按需 |
+| `generate` / `phase1` / `excel-loop` | HTML / 早期 PPT / 调试闭环 | 遗留 |
 
 ```bash
-python main.py full-deck \
-  --config config/report_25h1.yaml \
-  --data data/sample_25h1 \
-  --template templates/25H1_template.pptx \
-  --output output/25H1_full_deck.pptx
+python main.py --help
+python main.py <command> --help
 ```
 
-仅灌第 2 页（调试用）：
+---
 
-```bash
-python main.py excel-loop --output output/25H1_excel_loop.pptx
-```
+## 产物与 10 页对应
 
-### 4. 查看产物
-
-| 文件 | 说明 |
+| 产物 | 说明 |
 |------|------|
-| `output/xxx.pptx` | 全册简报 PPT（10 页文字 + 表图） |
-| `output/_full_deck/*.png` | 各页表图（含双向数据条 / 色阶） |
-| `output/_full_deck/total_ranking.xlsx` | 总规模排名表，可用 Excel 核对 |
-
-打开方式：
-
-```bash
-open output/25H1_full_deck.pptx
-```
-
-**页面对应：**
+| `output/{期}_tables.xlsx` | 主产物：各页终表 + 样式 +「使用说明」粘贴清单 |
+| `output/{期}_briefing.pptx` | 文字初稿；默认不贴表图 |
 
 | 页 | 内容 |
 |----|------|
-| 1 | 公募规模整体情况 |
-| 2 | 总规模（含货币）排名 |
-| 3 | 非货规模排名 |
-| 4 | 非货增量概览 |
-| 5 | 主动权益排名 |
-| 6 | 权益 ETF（含/不含联接） |
-| 7 | 货币排名 |
-| 8 | 固收排名 |
-| 9 | 固收+排名 |
-| 10 | FOF 排名 |
-## 数据格式：`fund_metrics.csv`
+| 1–4 | 行业整体 / 总规模 / 非货 / 非货增量 |
+| 5–6 | 主动权益 / 权益 ETF（左右表） |
+| 7–10 | 货币 / 固收 / 固收+ / FOF |
 
-长表，每行一条「公司 × 品类 × 时点」：
-
-| 字段 | 必填 | 说明 |
-|------|------|------|
-| `company` | ✅ | 基金公司全称，如 `银华基金`；行业合计用 `__industry__` |
-| `category` | ✅ | 见下方品类取值 |
-| `date` | ✅ | `YYYYMMDD`，需覆盖期末 / 上季末 / 年初 |
-| `aum` | ✅ | 规模（亿元） |
-| `new_issue` | 可选 | **本期/YTD 新发贡献**（记在报告期末行；年初行一般为 0） |
-| `nav_change` | 可选 | **本期/YTD 净值变化贡献**（同上） |
-| `holding_sales` | 可选 | **本期/YTD 持营贡献**（同上） |
-
-**`category` 取值：**
-
-| key | 含义 |
-|-----|------|
-| `total` | 总规模（含货币） |
-| `non_money` | 非货 |
-| `money` | 货币 |
-| `active_equity` | 主动权益 |
-| `passive_equity` | 被动权益 |
-| `fixed_income` | 固收 |
-| `fixed_income_plus` | 固收+ |
-| `fof` | FOF |
-
-示例（节选）：
-
-```csv
-company,category,date,aum,new_issue,nav_change,holding_sales
-__industry__,total,20241231,322447,0,0,0
-__industry__,total,20250630,344167,0,0,0
-银华基金,total,20241231,5344,0,0,0
-银华基金,total,20250630,5806,0,0,0
-银华基金,non_money,20250630,2423,0,0,0
-银华基金,money,20250630,3384,0,0,0
-```
-
-完整示例见：`data/sample_25h1/fund_metrics.csv`。
-
-### 从现有 Pandas Notebook 导出
-
-在分析脚本末尾增加：
-
-```python
-# df 需已整理为上述列
-out_dir = Path("data/25Q3")
-out_dir.mkdir(parents=True, exist_ok=True)
-df.to_csv(out_dir / "fund_metrics.csv", index=False, encoding="utf-8")
-```
-
-然后执行 `full-deck` 即可（详见 [出报指引.md](出报指引.md)）。
-
-## 其他命令
-
-```bash
-# 生成 HTML 简报草稿（五章结构，偏调试用）
-python main.py generate \
-  --config config/report_25h1.yaml \
-  --data data/sample_25h1 \
-  --output output/25H1_briefing.html
-
-# Phase1：第 1–2 页文字 + 简单表图（早期方案，表图无双向数据条）
-python main.py phase1 \
-  --config config/report_25h1.yaml \
-  --data data/sample_25h1 \
-  --output output/25H1_phase1.pptx
-```
-
-日常出简报请优先用 **`full-deck`**（见 [出报指引.md](出报指引.md)）。
-
-## 设计说明（为什么是 Excel → PPT）
-
-样例 25H1 PPT 中的「可视化表」本质是 **Excel 条件格式**（数据条 / 色阶）再贴进 PPT，不是 PPT 原生 Chart。
-
-当前闭环：
-
-```
-fund_metrics.csv
-    → 分析引擎（排名、增速、排名变化、增量拆解）
-    → 各页表图渲染（双向数据条 / 色阶 / 银华高亮）
-    → 灌入 PPT 模版全册 10 页（文字 + 等比贴图）
-```
-
-说明：
-
-- **PPT 表图**使用程序渲染的双向数据条，观感接近样例。
-- 同时会写出 `total_ranking.xlsx` 便于核对；Excel 内数据条可能为单向，**以 PPT 图为准**。
-- 示例 CSV 中部分细分品类为演示补全；正式使用请导出真实全量数据。
-## 目录结构
-
-```
-BriefingSupportSystem/
-├── main.py                      # 入口
-├── 出报指引.md                   # 新一期出报操作指引
-├── requirements.txt
-├── config/
-│   ├── report_25h1.yaml         # 报告周期配置示例
-│   ├── report_template.yaml     # 配置模板
-│   └── slide_map.yaml           # PPT 页/形状映射
-├── templates/
-│   └── 25H1_template.pptx       # 简报 PPT 母版
-├── data/
-│   └── sample_25h1/             # 示例 CSV
-├── output/                      # 生成结果（可 gitignore）
-└── briefing/
-    ├── analytics/               # 排名与增量计算
-    ├── narrative/               # 叙事规则
-    ├── excel/                   # Excel 构建与表图渲染
-    ├── render/                  # PPT / HTML 灌版
-    ├── excel_ppt_loop.py        # 主闭环
-    ├── phase1.py
-    ├── pipeline.py
-    └── cli.py
-```
+---
 
 ## 注意事项
 
-1. 模版路径：`--template templates/25H1_template.pptx`（由 25H1 定稿 PPT 复制而来）。
-2. 关注公司默认银华，可在 YAML 的 `focus_company` 修改。
-3. 叙事中带判断的句子（如「值得关注的是…」）仍建议人工审改；**数字句由系统写入，勿手抄**。
-4. 若打开到旧文件，请确认文件名与修改时间，或使用带日期的 `--output` 路径。
+1. **表图以终表为准**；观点句仍建议人工审改，数字句勿手抄。  
+2. 同一增速列禁止混用「百分数 `2`」与「小数 `0.02`」，否则会出现 1%→100%。  
+3. 默认不自动贴表（跨平台更稳）；需要系统贴图时加 `--paste-tables`（Mac 可选 Excel 导出）。  
+4. 关注公司默认为「示例基金 / 示例」，可在 YAML 的 `focus_company` 或 CLI `--focus` 修改。  
+5. 本地临时目录（`data/_web_jobs/`、`output/`、`.tmp_*`）不要提交。
 
-## 后续计划
+---
 
-- Notebook 一键导出模板  
-- 可选：本机 Excel 自动化导出更高保真表图（需授权控制 Excel）
+## CSV 辅路径（非推荐主流程）
+
+若暂无底稿、只有标准化长表，可使用 `data/*/fund_metrics.csv` + `full-deck`（不传 `--draft-xlsx`）。  
+字段约定见历史示例：`data/sample_25h1/fund_metrics.csv`。  
+**正式出报请走底稿终表路径**，以保证与排名表同口径。
+
+---
+
+## 交接打包（导出整个项目）
+
+在仓库**上一级目录**执行（排除 `.git`、IDE、缓存、临时产物与网页任务目录）：
+
+```bash
+cd /path/to/project
+
+zip -r BriefingSupportSystem-handoff.zip BriefingSupportSystem \
+  -x 'BriefingSupportSystem/.git/*' \
+  -x 'BriefingSupportSystem/.idea/*' \
+  -x 'BriefingSupportSystem/**/__pycache__/*' \
+  -x 'BriefingSupportSystem/.tmp_*/*' \
+  -x 'BriefingSupportSystem/output/*' \
+  -x 'BriefingSupportSystem/data/_web_jobs/*' \
+  -x 'BriefingSupportSystem/data/_web_uploads/*' \
+  -x 'BriefingSupportSystem/tmp_pptx_imgs/*' \
+  -x 'BriefingSupportSystem/tmp_pptx_media/*' \
+  -x 'BriefingSupportSystem/**/.DS_Store' \
+  -x 'BriefingSupportSystem/**/*.pyc'
+```
+
+若已把当前改动全部 commit，也可用仅含已跟踪文件的干净归档：
+
+```bash
+cd /path/to/project
+git archive --format=zip -o ../BriefingSupportSystem-handoff.zip HEAD
+```
+
+接手方解压后按本文「快速开始」安装即可。

@@ -1,4 +1,4 @@
-"""最小闭环：pandas → Excel(条件格式) → 出图 → PPT 第2页。"""
+"""【遗留】最小闭环：pandas → Excel → 出图 → PPT 第2页。正式出报请用 full-deck / serve。"""
 
 from __future__ import annotations
 

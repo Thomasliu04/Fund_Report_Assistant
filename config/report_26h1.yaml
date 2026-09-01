@@ -15,8 +15,8 @@ column_labels:
   ytd: "26H1"
   quarter: "Q2"
 
-focus_company: "银华基金"
-focus_company_short: "银华"
+focus_company: "示例基金"
+focus_company_short: "示例"
 
 categories:
   - key: total

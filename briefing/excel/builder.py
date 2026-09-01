@@ -24,7 +24,7 @@ HEADERS = [
 ]
 
 
-def build_total_ranking_workbook(rows: list[dict], output_path: str | Path, focus_company: str = "银华基金") -> Path:
+def build_total_ranking_workbook(rows: list[dict], output_path: str | Path, focus_company: str = "示例基金") -> Path:
     """
     rows 每项字段::
         rank, rank_change, company, aum, increment, growth_pct,

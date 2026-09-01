@@ -1,4 +1,4 @@
-"""报告构建流水线"""
+"""【遗留】HTML 报告构建流水线。正式出报请用 full-deck / serve。"""
 
 from __future__ import annotations
 

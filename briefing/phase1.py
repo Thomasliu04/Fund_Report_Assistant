@@ -1,4 +1,7 @@
-"""Phase 1：第 1–2 页文字 + 表图自动灌入 PPT。"""
+"""【遗留】Phase 1：第 1–2 页文字 + 表图自动灌入 PPT。
+
+正式出报请用 full-deck / serve（终表驱动）。
+"""
 
 from __future__ import annotations
 
@@ -44,7 +47,7 @@ def build_overview_payload(
     short = config.focus_company_short
 
     opening = narr.paragraphs[0] if narr.paragraphs else ""
-    # 对齐 Q4 模版：行业增速 vs 银华增速
+    # 对齐 Q4 模版：行业增速 vs 示例增速
     if total and non_money:
         y = config.current_date[2:4]
         m = int(config.current_date[4:6])
@@ -91,7 +94,7 @@ def build_overview_payload(
         "bullet_5": bullets[4] if len(bullets) > 4 else "",
         "highlight_1": highlight,
         "highlight_2": "",
-        "footnote": "注：REITs和另类基金未在表中注明",
+        "footnote": "",
     }
 
 
@@ -103,7 +106,7 @@ def build_total_ranking_payload(rankings: list[CompanyRanking], config: ReportCo
         "peer_moves": paras[0] if paras else "",
         "focus_rank": paras[1] if len(paras) > 1 else "",
         "focus_growth": paras[2] if len(paras) > 2 else "",
-        "footnote_passive": "注：被动权益=ETF+联接+场外普通指数+场外指数增强",
+        "footnote_passive": "",
     }
 
 
@@ -157,7 +160,7 @@ def _ranking_table(rankings: list[CompanyRanking]) -> tuple[list[str], list[list
             f"{_fmt_pct(r.growth_pct)}%",
             str(r.rank_change),
         ])
-        if "银华" in r.company:
+        if "示例" in r.company:
             focus_idx.append(i)
     return headers, rows, focus_idx
 

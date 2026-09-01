@@ -260,11 +260,10 @@ def _map_role_indices(headers: list[str], sheet_id: str) -> dict[str, int | None
             "增量" in x
             and "排名" not in x
             and not _is_single_quarter_label(x)
-            and "规模增量" not in x
             and (
                 _is_ytd_window_label(x)
                 or "非货增量" in x
-                or x in {"规模增量", "YTD非货增量", "26H1增量", "YTD增量"}
+                or x in {"规模增量", "YTD非货增量", "26H1增量", "YTD增量", "YTD规模增量"}
                 or x.endswith("年增量")
             )
         ),
@@ -274,9 +273,8 @@ def _map_role_indices(headers: list[str], sheet_id: str) -> dict[str, int | None
             and "增量" in x
             and "排名" not in x
             and not _is_single_quarter_label(x)
-            and "规模增量" not in x
         )
-        or x in {"规模增量", "YTD非货增量", "26H1增量", "YTD增量"},
+        or x in {"规模增量", "YTD非货增量", "26H1增量", "YTD增量", "YTD规模增量"},
     )
     # Prefer explicit 规模增量 for business
     bi = _col_by_equals(h, "规模增量")

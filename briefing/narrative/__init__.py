@@ -1,17 +1,1 @@
-"""Narrative package."""
-
-from briefing.narrative.generator import (
-    generate_business_ranking_narrative,
-    generate_increment_narrative,
-    generate_non_money_ranking_narrative,
-    generate_overview_narrative,
-    generate_total_ranking_narrative,
-)
-
-__all__ = [
-    "generate_overview_narrative",
-    "generate_total_ranking_narrative",
-    "generate_non_money_ranking_narrative",
-    "generate_increment_narrative",
-    "generate_business_ranking_narrative",
-]
+"""【遗留】CSV 叙事规则。正式出报请走 deck/sheet_narratives（终表驱动）。"""

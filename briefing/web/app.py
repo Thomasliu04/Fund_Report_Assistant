@@ -44,8 +44,8 @@ class GenerateRequest(BaseModel):
     current: str
     previous_quarter: str
     year_start: str
-    focus_company: str = "银华基金"
-    focus_company_short: str = "银华"
+    focus_company: str = "示例基金"
+    focus_company_short: str = "示例"
 
 
 def _ensure_dirs() -> None:
@@ -94,7 +94,7 @@ def _write_config(path: Path, req: GenerateRequest) -> None:
 
 
 def _preview_focus(data_dir: Path, config_path: Path, tables_xlsx: Path | None = None) -> dict[str, Any]:
-    """生成后快速核对银华关键指标（优先读终表 Excel，与 PPT 文字同口径）。"""
+    """生成后快速核对示例关键指标（优先读终表 Excel，与 PPT 文字同口径）。"""
     from briefing.data_loader import load_config
     from briefing.deck.table_facts import find_focus, load_table_book_from_xlsx
 
@@ -268,8 +268,13 @@ async def upload_draft(file: UploadFile = File(...)) -> dict:
     )
 
     try:
-        # 上传后先规范化为案例口径，再导入指标
-        normalize_draft_xlsx(xlsx_path, xlsx_path)
+        # 上传后先规范化为案例口径，再导入指标（保留 TopN 外的默认关注公司）
+        normalize_draft_xlsx(
+            xlsx_path,
+            xlsx_path,
+            focus_company="示例基金",
+            focus_short="示例",
+        )
         df = import_draft_xlsx(xlsx_path, output_csv=jdir / "fund_metrics.csv")
         dates = detect_dates(xlsx_path)
     except Exception as exc:

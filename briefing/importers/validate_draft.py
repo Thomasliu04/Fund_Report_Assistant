@@ -245,24 +245,52 @@ def _check_pct_column(report: ValidationReport, ws, col: int, header: str, sheet
         return
     abs_vals = [abs(x) for x in nums]
     med = median(abs_vals)
-    # 明确证据：开区间 (0,1) 的非整数 → Excel 小数；|v|≥2 → 百分数
-    # 不用 |v|≤1（会把百分数里的 0、1、-1 误判成小数）
+    # (0,1) 非整数：既可能是 Excel 小数(0.02=2%)，也可能是百分数里很小的增速(0.84=0.84%)
+    # 不能单凭 (0,1) 就断定「混用」。以列中位数为准：
+    # - median≥2 → 列是百分数；0.84 只是小增速，不报错
+    # - median<1 且仍有一批 |v|≥2 → 才像真混用
     clear_frac = sum(1 for v in abs_vals if 0 < v < 1)
     clear_points = sum(1 for v in abs_vals if v >= PCT_POINTS_MEDIAN)
     n = len(abs_vals)
     need = max(2, int(0.15 * n))
-    if clear_frac >= need and clear_points >= need:
+
+    if med >= PCT_POINTS_MEDIAN:
         report.add(
-            "error",
+            "info",
+            "pct_scale",
+            f"列「{header}」判定为 百分数(2=2%)（median={med:.3f}；"
+            f"含 {clear_frac} 个 |v|<1 的小增速，按百分数保留）",
+            sheet,
+        )
+        return
+
+    if med < 1.0 and clear_points >= need:
+        report.add(
+            "warning",
             "pct_mixed_scale",
             (
-                f"列「{header}」同时含小数（如 0.02）与百分数（如 5），"
-                f"会导致 1%/2% 显示成 100%/200%。请统一为百分数或统一为 Excel 小数。"
+                f"列「{header}」整体像 Excel 小数（median={med:.3f}），"
+                f"但又有 {clear_points} 个 |v|≥{PCT_POINTS_MEDIAN:g} 的百分数，"
+                f"可能导致 1%/2% 显示成 100%/200%。建议统一为百分数或统一为 Excel 小数。"
+            ),
+            sheet,
+        )
+        return
+
+    # 中位数落在模糊带：两边证据都强 → 提示，默认不拦生成（底稿通常可信）
+    if clear_frac >= need and clear_points >= need:
+        report.add(
+            "warning",
+            "pct_mixed_scale",
+            (
+                f"列「{header}」疑似同时含小数（如 0.02）与百分数（如 5），"
+                f"可能导致 1%/2% 显示成 100%/200%。建议统一为百分数或统一为 Excel 小数。"
                 f"（median={med:.3f}, 明确小数={clear_frac}, 明确百分数={clear_points}）"
             ),
             sheet,
         )
         return
+
     style = "百分数(2=2%)" if med >= PCT_POINTS_MEDIAN else "Excel小数(0.02=2%)"
     report.add("info", "pct_scale", f"列「{header}」判定为 {style}（median={med:.3f}）", sheet)
 
@@ -349,10 +377,24 @@ def _check_etf(report: ValidationReport, ws) -> None:
     else:
         report.add("info", "etf_right_ok", f"右表起点列 {right[0]}：「{right[1]}」", sheet)
 
-    # 左表前 10 列应有公司/规模类
-    left_headers = [h for c, h in headers if c <= 10]
+    # 左表：第 1 列起连续表头，至空列或右表起点（宽度随底稿变化，如 Q3=13）
+    left_cols = 0
+    max_scan = (right[0] - 1) if right else max((c for c, _ in headers), default=0)
+    for c in range(1, max_scan + 1):
+        h = _norm(ws.cell(1, c).value)
+        if not h or ("权益ETF" in h and "排名" in h):
+            break
+        left_cols = c
+    if left_cols:
+        report.add(
+            "info",
+            "etf_left_cols",
+            f"左表连续 {left_cols} 列（动态宽度）",
+            sheet,
+        )
+    left_headers = [h for c, h in headers if c <= left_cols] if left_cols else []
     if not any("规模" in h or h in COMPANY_HEADERS for h in left_headers):
-        report.add("warning", "etf_left_sparse", "左表（前10列）缺少规模/公司类表头", sheet)
+        report.add("warning", "etf_left_sparse", "左表缺少规模/公司类表头", sheet)
 
     for c, h in headers:
         if _is_pct_header(h):

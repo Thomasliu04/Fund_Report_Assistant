@@ -24,7 +24,7 @@ from briefing.phase1 import build_overview_payload, build_total_ranking_payload
 
 
 _FI_CLASSIFICATION_NOTE = (
-    "注：固收产品分类调整——原归属于固收分类的2只产品银华季季红和银华信用精选一年，"
+    "注：固收产品分类调整——原归属于固收分类的2只产品示例产品A和示例产品B，"
     "分别于24Q4和25Q1调整为固收+产品，因为分类调整对固收业务规模和排名会造成部分影响，"
     "这2只产品25Q4合计规模44亿"
 )
@@ -74,7 +74,7 @@ def build_non_money_payload(
             "p1": f"暂无{short}非货数据。",
             "p2": "",
             "p3": "",
-            "footnote_passive": "注：被动权益=ETF+联接+场外普通指数+场外指数增强",
+            "footnote_passive": "",
         }
     # 案例「高于Top30公司（18%）」用行业非货增速，而非算术平均
     avg_g = industry_growth if industry_growth is not None else (
@@ -99,7 +99,7 @@ def build_non_money_payload(
         "p1": p1,
         "p2": p2,
         "p3": "",
-        "footnote_passive": "注：被动权益=ETF+联接+场外普通指数+场外指数增强",
+        "footnote_passive": "",
     }
 
 
@@ -113,7 +113,7 @@ def build_increment_payload(breakdowns, config: ReportConfig) -> dict:
         "p1": paras[0],
         "p2": paras[1],
         "p3": paras[2],
-        "footnote_passive": "注：被动权益=ETF+联接+场外普通指数+场外指数增强",
+        "footnote_passive": "",
     }
 
 
@@ -161,7 +161,7 @@ def build_active_equity_payload(rankings: list[CompanyRanking], config: ReportCo
         "p2": p2,
         "p3": p3,
         "p4": "",
-        "subtitle": "1 主动权益排名",
+        "subtitle": "",
     }
 
 
@@ -200,8 +200,8 @@ def build_etf_payload(with_link: list[CompanyRanking], no_link: list[CompanyRank
     return {
         "p0": _etf_line("非货ETF（含联接）", f1),
         "p1": _etf_line("权益ETF（含联接）", f2 if has_equity_etf else None, require_data=True),
-        "sub_with": "2.1 非货ETF（含联接）排名",
-        "sub_without": "2.2 权益ETF（含联接）排名",
+        "sub_with": "",
+        "sub_without": "",
     }
 
 
@@ -224,7 +224,7 @@ def build_money_payload(rankings: list[CompanyRanking], config: ReportConfig) ->
             f"{vs}货币Top{config.top_n}平均增幅（{_fmt_pct(avg_g)}%）。"
         )
     return {
-        "title": "3.货币排名情况",
+        "title": "",
         "label_line": "货币：",
         "p1": p1,
     }
@@ -266,7 +266,7 @@ def build_fixed_income_payload(rankings: list[CompanyRanking], config: ReportCon
                 f"增速{_fmt_pct(focus.q_growth_pct)}%，在固收Top{config.top_n}公司位列第{qg_pos}。"
             )
     return {
-        "title": "4. 固收排名情况",
+        "title": "",
         "label_line": "固收：",
         "p1": p1,
         "p2": p2,
@@ -297,7 +297,7 @@ def build_fixed_income_plus_payload(rankings: list[CompanyRanking], config: Repo
             f"较{pq}{_rank_change_text(focus.rank_change_q, unit='位')}。"
         )
     return {
-        "title": "5. 固收+排名情况",
+        "title": "",
         "label_line": "固收+:",
         "p1": p1,
         "p2": p2,
@@ -323,7 +323,7 @@ def build_fof_payload(rankings: list[CompanyRanking], config: ReportConfig) -> d
             f"全年规模增长{_fmt_yi(focus.increment)}亿，增速{_fmt_pct(focus.growth_pct)}%{driver}。"
         )
     return {
-        "title": "6. FOF 排名情况",
+        "title": "",
         "label_line": "FOF：",
         "p1": p1,
     }

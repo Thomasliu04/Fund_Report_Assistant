@@ -122,7 +122,7 @@ def render_styled_table(
     rows: list[dict],
     output_path: str | Path,
     *,
-    focus_company: str = "银华基金",
+    focus_company: str = "示例基金",
     focus_key: str = "company",
     scale: int = 2,
     autofit: bool = True,

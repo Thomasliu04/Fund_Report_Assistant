@@ -90,7 +90,7 @@ def _to_float(v, default: float = 0.0) -> float:
 
 
 def _norm_company(name: str) -> str:
-    """统一管理人简称，避免「银华」与「银华基金」各占一行挤掉 TopN。"""
+    """统一管理人简称，避免「示例」与「示例基金」各占一行挤掉 TopN。"""
     s = str(name).strip()
     for suffix in (
         "基金管理有限公司",

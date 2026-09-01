@@ -1,7 +1,7 @@
 """将 payload 灌入 PPT 模版：整段替换文字 + 替换表图。
 
 标题样式对齐案例简报：章节标题加粗，业务关键字标红（C00000）；
-正文不再对「银华」单独加粗。
+正文不再对「示例」单独加粗。
 """
 
 from __future__ import annotations
@@ -124,7 +124,7 @@ def _set_paragraph_text(
     text: str,
     *,
     font_size_pt: float | None = None,
-    bold_token: str | None = None,  # 兼容旧参数；已不使用（银华不加粗）
+    bold_token: str | None = None,  # 兼容旧参数；已不使用（示例不加粗）
 ) -> None:
     """整段替换，并按案例规则设置加粗/标红。"""
     del bold_token  # 明确不再对关键字公司加粗

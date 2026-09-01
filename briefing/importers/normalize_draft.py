@@ -2,8 +2,8 @@
 
 对齐 25Q4 简报底稿约定：
 - 行业表：首列表头「类型」；仅合计~FOF 主品类，固定顺序
-- 排名表：仅保留 TopN（默认 30）
-- ETF：左表 1–10 列、右表从第 20 列起；左右均 TopN
+- 排名表：保留 TopN（默认 30）；关注公司若在 TopN 外仍追加一行
+- ETF：左表按连续表头动态列宽（可 >10，如 Q3 含单季列）；右表定位后写到 ≥20 列；左右均 TopN（含关注公司兜底）
 - 公司列统一简称（去掉「基金」后缀）；常见表头别名归一
 """
 
@@ -102,14 +102,23 @@ def _header_aliases(h: Any, *, ytd_tag: str, q_tag: str) -> Any:
         "权益ETF（国内外不踢联接）排名": "权益ETF\n排名",
         "权益ETF(国内外不踢联接)排名": "权益ETF\n排名",
         "YTD增量": f"{ytd_tag}增量",
+        "YTD规模增量": f"{ytd_tag}规模增量",
+        "YTD规模增幅%": f"{ytd_tag}规模增幅%",
+        "YTD排名变化": f"{ytd_tag}排名变化",
         "YTD增速%": f"{ytd_tag}增速",
         "YTD增速": f"{ytd_tag}增速",
         "YTD新发": f"{ytd_tag}新发",
         "YTD净值变化": f"{ytd_tag}净值变化",
         "YTD持营": f"{ytd_tag}持营",
         "季度增量": f"{q_tag}增量" if q_tag else "季度增量",
+        "季度规模增量": f"{q_tag}规模增量" if q_tag else "季度规模增量",
+        "季度规模增幅%": f"{q_tag}规模增幅%" if q_tag else "季度规模增幅%",
+        "季度排名变化": f"{q_tag}排名变化" if q_tag else "季度排名变化",
         "季度增速%": f"{q_tag}增速" if q_tag else "季度增速",
         "季度增速": f"{q_tag}增速" if q_tag else "季度增速",
+        "季度新发": f"{q_tag}新发" if q_tag else "季度新发",
+        "季度净值影响": f"{q_tag}净值影响" if q_tag else "季度净值影响",
+        "季度持营": f"{q_tag}持营" if q_tag else "季度持营",
     }
     if n in mapping:
         return mapping[n]
@@ -134,6 +143,19 @@ def _detect_ytd_q_tags(ws_industry) -> tuple[str, str]:
     return profile.ytd_tag, profile.quarter_tag
 
 
+def _company_matches(name: Any, focus_company: str, focus_short: str) -> bool:
+    if name is None:
+        return False
+    n = str(name).replace("基金", "").strip()
+    short = (focus_short or focus_company or "").replace("基金", "").strip()
+    full = (focus_company or "").strip()
+    if short and short in n:
+        return True
+    if full and full in str(name):
+        return True
+    return False
+
+
 def _copy_top_n_block(
     src_ws,
     dst_ws,
@@ -145,9 +167,10 @@ def _copy_top_n_block(
     ytd_tag: str,
     q_tag: str,
     strip_company: bool = True,
+    focus_company: str = "示例基金",
+    focus_short: str = "示例",
 ) -> int:
-    """复制一块矩形到目标表，仅保留表头 + TopN 数据行。返回写入的数据行数。"""
-    # 表头
+    """复制表头 + TopN；若关注公司排名在 TopN 外则追加一行（如固收第32的示例）。"""
     headers = []
     for i in range(n_cols):
         h = src_ws.cell(1, src_start_col + i).value
@@ -155,31 +178,55 @@ def _copy_top_n_block(
         dst_ws.cell(1, dst_start_col + i, _header_aliases(h, ytd_tag=ytd_tag, q_tag=q_tag))
 
     company_i = _find_company_col([_norm(h) for h in headers])
-    written = 0
+
+    def _write_src_row(src_r: int, out_r: int) -> None:
+        for i in range(n_cols):
+            v = src_ws.cell(src_r, src_start_col + i).value
+            if strip_company and company_i is not None and i == company_i:
+                v = _short_company(v)
+            dst_ws.cell(out_r, dst_start_col + i, v)
+
+    candidates: list[tuple[float, int]] = []  # (rank, src_row)
+    focus_src_row: int | None = None
     max_scan = min(src_ws.max_row or 1, 500)
+    blank_streak = 0
     for r in range(2, max_scan + 1):
         first = src_ws.cell(r, src_start_col).value
         if first is None or str(first).strip() == "":
-            # 连续空行则结束该块
-            if written > 0:
+            blank_streak += 1
+            if candidates and blank_streak >= 2:
                 break
             continue
-        # 排名列应为数字
+        blank_streak = 0
         try:
             rank = float(first)
         except (TypeError, ValueError):
             continue
+        candidates.append((rank, r))
+        co_val = (
+            src_ws.cell(r, src_start_col + company_i).value
+            if company_i is not None
+            else None
+        )
+        if _company_matches(co_val, focus_company, focus_short):
+            focus_src_row = r
+
+    written = 0
+    focus_included = False
+    for rank, src_r in candidates:
         if rank > top_n:
-            break
-        written += 1
-        out_r = written + 1
-        for i in range(n_cols):
-            v = src_ws.cell(r, src_start_col + i).value
-            if strip_company and company_i is not None and i == company_i:
-                v = _short_company(v)
-            dst_ws.cell(out_r, dst_start_col + i, v)
+            continue
         if written >= top_n:
             break
+        written += 1
+        _write_src_row(src_r, written + 1)
+        if focus_src_row == src_r:
+            focus_included = True
+
+    if focus_src_row is not None and not focus_included:
+        written += 1
+        _write_src_row(focus_src_row, written + 1)
+
     return written
 
 
@@ -240,11 +287,12 @@ def _normalize_rank_sheet(
     top_n: int,
     ytd_tag: str,
     q_tag: str,
+    focus_company: str = "示例基金",
+    focus_short: str = "示例",
 ) -> None:
     n_cols = 0
     for c in range(1, (src_ws.max_column or 1) + 1):
         if src_ws.cell(1, c).value is None or _norm(src_ws.cell(1, c).value) == "":
-            # 允许中间空列？排名表一般连续
             break
         n_cols = c
     if n_cols <= 0:
@@ -258,6 +306,8 @@ def _normalize_rank_sheet(
         top_n=top_n,
         ytd_tag=ytd_tag,
         q_tag=q_tag,
+        focus_company=focus_company,
+        focus_short=focus_short,
     )
 
 
@@ -268,16 +318,20 @@ def _normalize_etf_sheet(
     top_n: int,
     ytd_tag: str,
     q_tag: str,
+    focus_company: str = "示例基金",
+    focus_short: str = "示例",
 ) -> None:
-    """左表 1–10，右表从第 20 列起（案例布局）。"""
-    # 左表列数：到第一个空列或权益ETF 之前
+    """左表：连续表头动态列宽；右表写到 max(20, 左表列数+2)，避免与左表重叠。"""
+    right_start = _find_etf_right_start(src_ws)
     left_cols = 0
-    for c in range(1, min(15, (src_ws.max_column or 1) + 1)):
+    scan_to = (right_start - 1) if right_start else (src_ws.max_column or 1)
+    for c in range(1, scan_to + 1):
         h = _norm(src_ws.cell(1, c).value)
         if not h or ("权益ETF" in h and "排名" in h):
             break
         left_cols = c
-    left_cols = min(left_cols, 10) or 10
+    if left_cols <= 0:
+        left_cols = 10  # 极端缺表头时仍占位，避免空左表
 
     _copy_top_n_block(
         src_ws,
@@ -288,12 +342,12 @@ def _normalize_etf_sheet(
         top_n=top_n,
         ytd_tag=ytd_tag,
         q_tag=q_tag,
+        focus_company=focus_company,
+        focus_short=focus_short,
     )
 
-    right_start = _find_etf_right_start(src_ws)
     if right_start is None:
         return
-    # 右表连续列数
     right_cols = 0
     for c in range(right_start, (src_ws.max_column or 1) + 1):
         h = _norm(src_ws.cell(1, c).value)
@@ -302,15 +356,19 @@ def _normalize_etf_sheet(
         right_cols += 1
     if right_cols <= 0:
         return
+    # 案例布局右表常从 20 列起；左表更宽时（如 Q3=13）向右顺延，避免覆盖
+    right_dst = max(20, left_cols + 2)
     _copy_top_n_block(
         src_ws,
         dst_ws,
         src_start_col=right_start,
         n_cols=right_cols,
-        dst_start_col=20,  # 案例右表起点
+        dst_start_col=right_dst,
         top_n=top_n,
         ytd_tag=ytd_tag,
         q_tag=q_tag,
+        focus_company=focus_company,
+        focus_short=focus_short,
     )
 
 
@@ -319,10 +377,12 @@ def normalize_draft_xlsx(
     dst_xlsx: str | Path,
     *,
     top_n: int = _TOP_N_DEFAULT,
+    focus_company: str = "示例基金",
+    focus_short: str = "示例",
 ) -> Path:
     """
     读入原始底稿，写出案例口径终表 xlsx。
-    返回 dst 路径。
+    TopN 之外若含关注公司，仍追加一行，避免 PPT 读表报 focus_missing。
     """
     src = Path(src_xlsx)
     dst = Path(dst_xlsx)
@@ -334,7 +394,6 @@ def normalize_draft_xlsx(
         warnings.simplefilter("ignore")
         src_wb = load_workbook(src, data_only=True)
 
-    # 日期标签
     ind_name = _resolve_in_sheet(src_wb, _SHEET_OUT["1整体情况"])
     ytd_tag, q_tag = "YTD", "季度"
     if ind_name:
@@ -353,9 +412,25 @@ def normalize_draft_xlsx(
         if out_name == "1整体情况":
             _normalize_industry(src_ws, dst_ws, ytd_tag=ytd_tag, q_tag=q_tag)
         elif out_name == "6权益ETF（含联接）":
-            _normalize_etf_sheet(src_ws, dst_ws, top_n=top_n, ytd_tag=ytd_tag, q_tag=q_tag)
+            _normalize_etf_sheet(
+                src_ws,
+                dst_ws,
+                top_n=top_n,
+                ytd_tag=ytd_tag,
+                q_tag=q_tag,
+                focus_company=focus_company,
+                focus_short=focus_short,
+            )
         else:
-            _normalize_rank_sheet(src_ws, dst_ws, top_n=top_n, ytd_tag=ytd_tag, q_tag=q_tag)
+            _normalize_rank_sheet(
+                src_ws,
+                dst_ws,
+                top_n=top_n,
+                ytd_tag=ytd_tag,
+                q_tag=q_tag,
+                focus_company=focus_company,
+                focus_short=focus_short,
+            )
 
     if not out.sheetnames:
         raise ValueError(f"未能从底稿识别任何终表 sheet: {src}")

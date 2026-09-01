@@ -154,7 +154,7 @@
         data.table_images_from === "excel"
           ? "表图来自 Excel 条件格式导出"
           : data.table_images_from === "skipped_manual_paste"
-            ? "表图需人工从 Excel 粘贴（模版旧表图已清空，右侧为占位提示）"
+            ? "表图需人工从 Excel 粘贴（模版旧表图已清空）"
             : "表图为程序绘制（Excel 静默导出未成功）";
       const narHint = data.narrative_source === "tables" ? "文字已按本期终表重写" : "文字来源需核对";
       setStatus(

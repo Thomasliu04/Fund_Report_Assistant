@@ -1,4 +1,4 @@
-# 生成产物（可随时用 full-deck / export-tables 重新生成）
+# 生成产物（可随时用 export-tables / full-deck 重新生成）
 output/*
 !output/.gitkeep
 
@@ -6,9 +6,10 @@ output/*
 data/_web_uploads/
 data/_web_jobs/
 
-# 本地临时解包
+# 本地临时解包与对比产物
 tmp_pptx_imgs/
 tmp_pptx_media/
+.tmp_*/
 
 # IDE
 .idea/
@@ -24,3 +25,6 @@ __pycache__/
 .pytest_cache/
 .venv/
 venv/
+*.egg-info/
+dist/
+build/

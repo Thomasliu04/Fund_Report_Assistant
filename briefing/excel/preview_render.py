@@ -45,7 +45,7 @@ def render_ranking_with_databars(
     rows: list[dict],
     output_path: str | Path,
     *,
-    focus_company: str = "银华基金",
+    focus_company: str = "示例基金",
     scale: int = 2,
 ) -> Path:
     """绘制接近 Excel 数据条/色阶观感的宽表 PNG。"""

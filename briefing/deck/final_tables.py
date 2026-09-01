@@ -37,7 +37,7 @@ class FinalTableSpec:
     # 1-based inclusive; None = 从第 1 列读到表头连续非空为止
     col_start: int = 1
     col_end: int | None = None
-    # 行业表：读到首个空行即停（避免 top30 / 银华分块）
+    # 行业表：读到首个空行即停（避免 top30 / 示例分块）
     stop_at_blank_row: bool = False
     # 行业表只要合计~FOF，不要后面的杂项行
     max_data_rows: int | None = None
@@ -73,14 +73,15 @@ FINAL_TABLE_SPECS: tuple[FinalTableSpec, ...] = (
         ("6权益ETF（含联接）", "ETF含联接"),
         "etf",
         col_start=1,
-        col_end=10,
+        # None：读连续表头至空列/右表起点（Q3 左表可为 13 列，不再写死 10）
+        col_end=None,
         max_data_rows=30,
     ),
     FinalTableSpec(
         "06_权益ETF含联接",
         ("6权益ETF（含联接）",),
         "etf",
-        # 规范化后右表从第 20 列起；未规范化时仍动态定位
+        # 规范化后右表常从 ≥20 列起；未规范化时动态定位
         col_start=0,
         col_end=None,
         max_data_rows=30,
@@ -248,6 +249,19 @@ def _find_etf_right_block(raw: pd.DataFrame) -> tuple[int, int] | None:
     return None
 
 
+def _company_is_focus(name: Any, focus_company: str, focus_short: str) -> bool:
+    if name is None:
+        return False
+    n = str(name).replace("基金", "").strip()
+    short = (focus_short or focus_company or "").replace("基金", "").strip()
+    full = (focus_company or "").strip()
+    if short and short in n:
+        return True
+    if full and full in str(name):
+        return True
+    return False
+
+
 def _read_block(
     path: Path,
     sheet: str,
@@ -257,6 +271,8 @@ def _read_block(
     stop_at_blank_row: bool,
     max_data_rows: int | None,
     kind: SheetKind,
+    focus_company: str = "",
+    focus_short: str = "",
 ) -> tuple[list[ColumnSpec], list[dict]]:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -301,6 +317,14 @@ def _read_block(
                 h = _norm_header(raw.iloc[0, c])
                 if not h or _is_chart_helper(h):
                     break
+                # ETF 左表：勿跨过右表起点（无空列间隔时）
+                if (
+                    kind == "etf"
+                    and col_start == 1
+                    and "权益ETF" in h
+                    and "排名" in h
+                ):
+                    break
                 headers_raw.append(raw.iloc[0, c])
                 c += 1
             end = start + len(headers_raw)
@@ -316,10 +340,25 @@ def _read_block(
         0,
     )
 
+    def _row_from_vals(vals: list[Any]) -> dict[str, Any]:
+        row: dict[str, Any] = {}
+        for i, col in enumerate(columns):
+            row[col.key] = _to_number(vals[i])
+        co_key = columns[company_idx].key
+        raw_co = row.get(co_key, "")
+        if raw_co is None:
+            raw_co = ""
+        co = str(raw_co).strip()
+        if co.endswith("基金") and len(co) > 2:
+            co = co[:-2]
+        row["company"] = co
+        if _norm_header(display_headers[company_idx]) in {"公司", "基金公司", "管理人"}:
+            row[co_key] = co
+        return row
+
     rows: list[dict] = []
+    focus_extra: dict | None = None
     for r in range(1, len(raw)):
-        if max_data_rows is not None and len(rows) >= max_data_rows:
-            break
         vals = [raw.iloc[r, c] for c in range(start, end)]
         if len(vals) < len(columns):
             vals.extend([None] * (len(columns) - len(vals)))
@@ -345,20 +384,23 @@ def _read_block(
             except (TypeError, ValueError):
                 continue
 
-        row: dict[str, Any] = {}
-        for i, col in enumerate(columns):
-            row[col.key] = _to_number(vals[i])
-        co_key = columns[company_idx].key
-        raw_co = row.get(co_key, "")
-        if raw_co is None:
-            raw_co = ""
-        co = str(raw_co).strip()
-        if co.endswith("基金") and len(co) > 2:
-            co = co[:-2]
-        row["company"] = co
-        if _norm_header(display_headers[company_idx]) in {"公司", "基金公司", "管理人"}:
-            row[co_key] = co
+        row = _row_from_vals(vals)
+        at_cap = max_data_rows is not None and len(rows) >= max_data_rows
+        if at_cap:
+            # TopN 截断后仍保留关注公司一行（如固收第 32 的示例）
+            if (
+                focus_extra is None
+                and kind != "category"
+                and _company_is_focus(row.get("company"), focus_company, focus_short)
+            ):
+                focus_extra = row
+            continue
         rows.append(row)
+
+    if focus_extra is not None and not any(
+        _company_is_focus(r.get("company"), focus_company, focus_short) for r in rows
+    ):
+        rows.append(focus_extra)
 
     if kind == "category" and rows:
         order = {name: i for i, name in enumerate(_CATEGORY_ORDER)}
@@ -367,8 +409,13 @@ def _read_block(
     return columns, rows
 
 
-def load_final_tables(xlsx_path: str | Path) -> list[tuple[str, list[ColumnSpec], list[dict]]]:
-    """从底稿 xlsx 读取全部终表块。"""
+def load_final_tables(
+    xlsx_path: str | Path,
+    *,
+    focus_company: str = "示例基金",
+    focus_short: str = "示例",
+) -> list[tuple[str, list[ColumnSpec], list[dict]]]:
+    """从底稿 xlsx 读取全部终表块。关注公司若在 TopN 外仍保留一行。"""
     path = Path(xlsx_path)
     if not path.exists():
         raise FileNotFoundError(path)
@@ -394,6 +441,8 @@ def load_final_tables(xlsx_path: str | Path) -> list[tuple[str, list[ColumnSpec]
             stop_at_blank_row=spec.stop_at_blank_row,
             max_data_rows=spec.max_data_rows,
             kind=spec.kind,
+            focus_company=focus_company,
+            focus_short=focus_short,
         )
         if not cols:
             # 可选块（如白表缺权益ETF右表）直接跳过
@@ -409,7 +458,7 @@ def export_tables_from_final_xlsx(
     output_path: str | Path,
     *,
     period_label: str = "",
-    focus_company: str = "银华",
+    focus_company: str = "示例",
     normalize: bool = True,
 ) -> Path:
     """终表 → 带数据条/色阶的表图工作簿。默认先规范化为案例口径。"""
@@ -418,9 +467,15 @@ def export_tables_from_final_xlsx(
         from briefing.importers.normalize_draft import normalize_draft_xlsx
 
         norm_path = Path(output_path).with_name(Path(output_path).stem + "_normalized_draft.xlsx")
-        path = normalize_draft_xlsx(path, norm_path)
+        path = normalize_draft_xlsx(
+            path,
+            norm_path,
+            focus_company=focus_company,
+            focus_short=str(focus_company).replace("基金", "") or "示例",
+        )
 
-    sheets = load_final_tables(path)
+    short = str(focus_company).replace("基金", "") or "示例"
+    sheets = load_final_tables(path, focus_company=focus_company, focus_short=short)
     # 推断期别
     if not period_label:
         stem = Path(xlsx_path).stem

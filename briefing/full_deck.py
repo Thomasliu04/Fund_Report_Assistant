@@ -30,7 +30,6 @@ from briefing.excel.sheet_export import excel_available, export_sheets_via_excel
 from briefing.excel.styled_table import ColumnSpec, render_styled_table
 from briefing.render.pptx_filler import (
     _find_shape,
-    add_table_placeholder,
     load_slide_map,
     remove_picture,
     replace_narrative_paragraphs,
@@ -242,8 +241,17 @@ def run_full_deck(
         from briefing.importers.normalize_draft import normalize_draft_xlsx
 
         normalized = work_dir / "draft_normalized.xlsx"
-        normalize_draft_xlsx(draft_path, normalized)
-        excel_sheets = load_final_tables(normalized)
+        normalize_draft_xlsx(
+            draft_path,
+            normalized,
+            focus_company=config.focus_company,
+            focus_short=config.focus_company_short or focus,
+        )
+        excel_sheets = load_final_tables(
+            normalized,
+            focus_company=config.focus_company,
+            focus_short=config.focus_company_short or focus,
+        )
     elif tables_path and tables_path.exists():
         # 直接使用已导出的终表；不再从 CSV 成文
         excel_sheets = []
@@ -361,12 +369,11 @@ def run_full_deck(
                 pic_names.append(pic["shape"])
             for name in pic_names:
                 try:
-                    shape = _find_shape(slide, name)
+                    _find_shape(slide, name)
                 except KeyError:
                     continue
-                left, top, width, height = shape.left, shape.top, shape.width, shape.height
+                # 清空模版旧表图，不放粘贴提示（粘贴清单见出报指引 / Excel 说明页）
                 remove_picture(slide, name)
-                add_table_placeholder(slide, left=left, top=top, width=width, height=height)
 
     prs.save(str(output_pptx))
     return {
